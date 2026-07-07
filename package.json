@@ -1,0 +1,60 @@
+{
+  "name": "basic-mcp-rpc-example",
+  "version": "0.1.0",
+  "description": "MCP server that lets LLMs read Ethereum chain data — balances, blocks, transactions, tokens",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@11.5.1",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "basic-mcp-rpc-example": "./dist/stdio.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "tsx src/main/stdio.ts",
+    "dev:http": "tsx src/main/http.ts",
+    "start:http": "node dist/http.mjs",
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "depcruise": "depcruise src",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "pnpm lint && pnpm typecheck && pnpm depcruise && pnpm test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chainspeak/basic-mcp-rpc-example.git"
+  },
+  "keywords": [
+    "mcp",
+    "ethereum",
+    "evm",
+    "blockchain",
+    "viem",
+    "llm"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/client": "2.0.0-beta.2",
+    "@modelcontextprotocol/node": "2.0.0-beta.2",
+    "@modelcontextprotocol/server": "2.0.0-beta.2",
+    "neverthrow": "^8.2.0",
+    "pino": "^10.3.1",
+    "viem": "^2.54.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.2",
+    "@types/node": "^26.1.0",
+    "dependency-cruiser": "^18.0.0",
+    "tsdown": "^0.22.3",
+    "tsx": "^4.23.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  }
+}

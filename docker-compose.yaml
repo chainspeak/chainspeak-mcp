@@ -1,0 +1,11 @@
+services:
+  mcp-server:
+    build: .
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:3000:3000'
+    environment:
+      ETH_RPC_URL: ${ETH_RPC_URL}
+      ETH_RPC_URL_FALLBACK: ${ETH_RPC_URL_FALLBACK:-}
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
