@@ -24,4 +24,20 @@ show('tokenBalance(USDC, binance)', token.match((v) => v, (e) => ({ ERR: e })))
 const bad = await reader.tokenBalance(notAContract, vitalik)
 show('tokenBalance(not-a-contract) — expect invalid_input', bad.match((v) => v, (e) => ({ ERR: e })))
 
+const firstTx = '0x5c504ed432cb51138bcf09aa5e8a410dd4a1e204ef84bfed1be16dfba1b22060' as const
+const tx = await reader.transaction(firstTx)
+show('transaction(first mainnet tx)', tx.match((v) => v, (e) => ({ ERR: e })))
+
+const missing = await reader.transaction(`0x${'de'.repeat(32)}`)
+show('transaction(garbage hash) — expect null', missing.match((v) => v, (e) => ({ ERR: e })))
+
+const ens = await reader.resolveEns('vitalik.eth')
+show('resolveEns(vitalik.eth)', ens.match((v) => v, (e) => ({ ERR: e })))
+
+const noEns = await reader.resolveEns('this-name-does-not-exist-40404.eth')
+show('resolveEns(unregistered) — expect null', noEns.match((v) => v, (e) => ({ ERR: e })))
+
+const fees = await reader.feeEstimate()
+show('feeEstimate', fees.match((v) => v, (e) => ({ ERR: e })))
+
 process.exit(0)

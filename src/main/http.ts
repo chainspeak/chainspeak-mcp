@@ -9,16 +9,15 @@ import { buildServer } from '../server'
 
 const main = (): void => {
   const config = loadConfig(process.env)
-  if (!config.MCP_AUTH_TOKEN) {
-    throw new Error(
-      'MCP_AUTH_TOKEN is required for the HTTP server: it exposes your RPC endpoint on the ' +
-        'network. Set a token of at least 16 characters and send it as "Authorization: Bearer <token>".',
-    )
-  }
-  const token = config.MCP_AUTH_TOKEN
   const deps = buildDeps(config)
   const handler = createMcpHandler(() => buildServer(deps))
-  const guarded = requireBearer(token, (req) => handler.fetch(req))
+  const serve = (req: Request): Promise<Response> => handler.fetch(req)
+  const guarded = config.MCP_AUTH_TOKEN ? requireBearer(config.MCP_AUTH_TOKEN, serve) : serve
+  if (!config.MCP_AUTH_TOKEN) {
+    deps.log.warn(
+      'MCP_AUTH_TOKEN is not set — the HTTP server is UNAUTHENTICATED; anyone who can reach it can use your RPC endpoint',
+    )
+  }
 
   const nodeHandler = toNodeHandler({
     fetch: (req: Request): Promise<Response> => {

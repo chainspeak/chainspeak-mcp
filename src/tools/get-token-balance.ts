@@ -40,7 +40,7 @@ export const tokenBalanceHandler = (
 export const getTokenBalance = defineTool({
   name: 'eth_get_token_balance',
   description:
-    "ERC-20 token balance of a holder for a given token contract. This is for ERC-20 tokens only — for the native ETH balance use eth_get_balance. Done via eth_call to the token's balanceOf, decimals, symbol, and name functions. Returns raw (smallest-unit integer as a decimal string) plus formatted (the decimals-adjusted human amount, null when the token exposes no decimals) and best-effort metadata; symbol, name, and decimals are null for nonstandard tokens that do not expose them.",
+    "ERC-20 token balance of a holder for a given token contract. This is for ERC-20 tokens only — for the native ETH balance use eth_get_balance. Done via eth_call to the token's balanceOf, decimals, symbol, and name functions. Returns raw (smallest-unit integer as a decimal string) plus formatted (the decimals-adjusted human amount, null when the token exposes no decimals) and best-effort metadata; symbol, name, and decimals are null for nonstandard tokens that do not expose them. For ENS names like vitalik.eth, resolve to an address first with eth_resolve_ens.",
   input,
   output,
   idempotent: false,

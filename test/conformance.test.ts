@@ -49,13 +49,16 @@ describe('tool conformance', () => {
         ])
       })
 
-      it('serializes chain quantities as strings — no numeric output fields except decimals', () => {
+      it('serializes chain quantities as strings — numeric output fields only for small counts', () => {
         const jsonSchema = z.toJSONSchema(tool.output) as {
           properties?: Record<string, unknown>
         }
         for (const [field, prop] of Object.entries(jsonSchema.properties ?? {})) {
           if (/"(number|integer)"/.test(JSON.stringify(prop))) {
-            expect(field, `numeric output field "${field}" must be named decimals`).toBe('decimals')
+            expect(
+              ['decimals', 'log_count'],
+              `numeric output field "${field}" must be a bounded count, never a chain quantity`,
+            ).toContain(field)
           }
         }
       })

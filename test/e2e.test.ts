@@ -19,7 +19,14 @@ describe('e2e protocol round trip', () => {
     const client = await connect()
     const { tools } = await client.listTools()
     const names = tools.map((t) => t.name).sort()
-    expect(names).toEqual(['eth_get_balance', 'eth_get_chain_info', 'eth_get_token_balance'])
+    expect(names).toEqual([
+      'eth_get_balance',
+      'eth_get_chain_info',
+      'eth_get_gas_price',
+      'eth_get_token_balance',
+      'eth_get_transaction',
+      'eth_resolve_ens',
+    ])
     for (const tool of tools) {
       expect(tool.annotations?.readOnlyHint).toBe(true)
       expect(tool.annotations?.destructiveHint).toBe(false)

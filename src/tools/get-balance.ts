@@ -28,7 +28,7 @@ export const balanceHandler = (
 export const getBalance = defineTool({
   name: 'eth_get_balance',
   description:
-    'Native ETH balance of an address at a given block. This is the account gas-token balance only — it does NOT cover ERC-20 tokens; for a token balance use eth_get_token_balance. Wraps eth_getBalance. Returns the balance as decimal strings in both wei and ether.',
+    'Native ETH balance of an address at a given block. This is the account gas-token balance only — it does NOT cover ERC-20 tokens; for a token balance use eth_get_token_balance. Wraps eth_getBalance. Returns the balance as decimal strings in both wei and ether. For ENS names like vitalik.eth, resolve to an address first with eth_resolve_ens.',
   input,
   output,
   idempotent: false,
