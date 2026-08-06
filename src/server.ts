@@ -4,7 +4,7 @@ import { allTools } from './tools'
 
 export const buildServer = (deps: Deps): McpServer => {
   const server = new McpServer(
-    { name: 'basic-mcp-rpc-example', version: '0.1.0' },
+    { name: 'chainspeak-mcp', version: '0.1.0' },
     { capabilities: { tools: {} } },
   )
   for (const tool of allTools) {

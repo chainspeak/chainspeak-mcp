@@ -1,5 +1,5 @@
 {
-  "name": "basic-mcp-rpc-example",
+  "name": "chainspeak-mcp",
   "version": "0.1.0",
   "description": "MCP server that lets LLMs read Ethereum chain data — balances, blocks, transactions, tokens",
   "license": "MIT",
@@ -9,7 +9,7 @@
     "node": ">=20"
   },
   "bin": {
-    "basic-mcp-rpc-example": "./dist/stdio.mjs"
+    "chainspeak-mcp": "./dist/stdio.mjs"
   },
   "files": [
     "dist"
@@ -29,7 +29,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/chainspeak/basic-mcp-rpc-example.git"
+    "url": "git+https://github.com/chainspeak/chainspeak-mcp.git"
   },
   "keywords": [
     "mcp",

@@ -1,4 +1,4 @@
-# basic-mcp-rpc-example
+# chainspeak-mcp
 
 MCP server that lets LLMs read Ethereum chain data over JSON-RPC. Read-only, no keys, no signing.
 
@@ -33,7 +33,7 @@ Add to your MCP client config, e.g. `claude_desktop_config.json`:
   "mcpServers": {
     "eth-rpc": {
       "command": "node",
-      "args": ["/absolute/path/to/basic-mcp-rpc-example/dist/stdio.mjs"],
+      "args": ["/absolute/path/to/chainspeak-mcp/dist/stdio.mjs"],
       "env": { "ETH_RPC_URL": "https://ethereum-rpc.publicnode.com" }
     }
   }
@@ -44,7 +44,7 @@ Or with Claude Code:
 
 ```sh
 claude mcp add eth-rpc -e ETH_RPC_URL=https://ethereum-rpc.publicnode.com \
-  -- node /absolute/path/to/basic-mcp-rpc-example/dist/stdio.mjs
+  -- node /absolute/path/to/chainspeak-mcp/dist/stdio.mjs
 ```
 
 ## Run over HTTP
