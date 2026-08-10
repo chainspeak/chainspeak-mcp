@@ -8,6 +8,12 @@
   "engines": {
     "node": ">=20"
   },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    }
+  },
   "bin": {
     "chainspeak-mcp": "./dist/stdio.mjs"
   },
@@ -15,17 +21,19 @@
     "dist"
   ],
   "scripts": {
-    "dev": "tsx src/main/stdio.ts",
-    "dev:http": "tsx src/main/http.ts",
+    "dev": "tsx src/adapters/stdio.ts",
+    "dev:http": "tsx src/adapters/http.ts",
     "start:http": "node dist/http.mjs",
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "depcruise": "depcruise src",
+    "check:portability": "sh -c '! grep -rn \"cloudflare:\" src/core'",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "pnpm lint && pnpm typecheck && pnpm depcruise && pnpm test"
+    "check": "pnpm lint && pnpm typecheck && pnpm depcruise && pnpm check:portability && pnpm test",
+    "prepublishOnly": "pnpm check && pnpm build"
   },
   "repository": {
     "type": "git",

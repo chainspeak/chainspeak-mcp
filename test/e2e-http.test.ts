@@ -1,17 +1,16 @@
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { createMcpHandler } from '@modelcontextprotocol/server'
-import { ok } from 'neverthrow'
 import { describe, expect, it } from 'vitest'
-import { requireBearer } from '../src/mcp/http-auth'
-import { buildServer } from '../src/server'
-import { createFakeReader, silentLogger } from './fakes/chain-reader'
+import { requireBearer } from '../src/core/mcp/http-auth'
+import { buildServer } from '../src/core/server'
+import { createFakeReader, silentLogger, testRegistry } from './fakes/chain-reader'
 
 const TOKEN = 'test-token-0123456789abcdef'
 
 const buildGuardedFetch = () => {
   const reader = createFakeReader()
   const handler = createMcpHandler(() =>
-    buildServer({ readerFor: () => ok(reader), log: silentLogger }),
+    buildServer({ registry: testRegistry(reader), log: silentLogger }),
   )
   return requireBearer(TOKEN, (req) => handler.fetch(req))
 }
@@ -48,11 +47,15 @@ describe('http e2e', () => {
   it('serves a full tool call with a valid token', async () => {
     const client = await connect(buildGuardedFetch())
     const res = await client.callTool({
-      name: 'eth_get_balance',
-      arguments: { address: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' },
+      name: 'chainspeak_get_account',
+      arguments: { address_or_name: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' },
     })
     expect(res.isError).toBeFalsy()
-    expect(res.structuredContent).toEqual({ wei: '1500000000000000000', eth: '1.5' })
+    expect(res.structuredContent).toMatchObject({
+      chain: 'ethereum',
+      balance_wei: '1500000000000000000',
+      balance_native: '1.5',
+    })
     await client.close()
   })
 })

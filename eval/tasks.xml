@@ -1,0 +1,85 @@
+<!--
+  Tool-evaluation task set, adapted from the Anthropic cookbook tool-evaluation format.
+  Each expected answer is a deterministic on-chain fact, verified against an archive RPC
+  (https://eth.drpc.org) on 2026-08-08 (tasks 1-8) and 2026-08-09 (tasks 9-13).
+  Historical blocks/txs never change, so these stay valid across tool redesigns.
+
+  Capability notes:
+  - Task 5 expects the true gas limit of the pinned tx. The video-01 server did NOT
+    return gas limit, so both baseline models honestly answered NOT_FOUND (score 0).
+    The tier-1 redesign exposes gas_limit, so the task now passes — this was the
+    designed trap flip, not a moved goalpost.
+  - Tasks 9-13 were added for eval round two (tier-1 redesign): reverse ENS,
+    block inspection + response-size discipline, pagination, event decode, and
+    error steering (a nonexistent block must yield NOT_FOUND quickly, not retries).
+  - Tasks 14-15 were added for batch 2 (failure analysis + get_events), facts
+    verified 2026-08-09 against https://eth.drpc.org. Task 14's expected reason
+    comes from the trace path; drpc trace was verified reliable across tx ages
+    (2-year-old and current txs both trace), so the answer is stable there. On
+    a trace-less RPC the replay path may honestly answer "could not reproduce"
+    for this order-dependent slippage failure, and a TRANSIENT trace failure
+    falls back to replay with failure.method_note as the receipt — in either
+    case the miss is capability/timing, not a tool defect.
+-->
+<tasks>
+  <task>
+    <prompt>Using the available tools, resolve the ENS name vitalik.eth. Reply with the address it resolves to.</prompt>
+    <response>0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045</response>
+  </task>
+  <task>
+    <prompt>Using the available tools, find the ETH balance of address 0x00000000219ab540356cBB839Cbe05303d7705Fa at block 15000000. Reply with just the integer wei value.</prompt>
+    <response>12927685000069000000000069</response>
+  </task>
+  <task>
+    <prompt>Using the available tools, find the ETH balance of vitalik.eth at block 15000000. Reply with just the integer wei value.</prompt>
+    <response>3204212282633000527547</response>
+  </task>
+  <task>
+    <prompt>Using the available tools, find the total transaction fee that was paid for transaction 0x5c504ed432cb51138bcf09aa5e8a410dd4a1e204ef84bfed1be16dfba1b22060. Reply with just the fee as a decimal number in ETH.</prompt>
+    <response>1.05</response>
+  </task>
+  <task>
+    <prompt>Using the available tools, find the gas limit that was set for transaction 0xa278205118a242c87943b9ed83aacafe9906002627612ac3672d8ea224e38181. Reply with just the integer.</prompt>
+    <response>163784</response>
+  </task>
+  <task>
+    <prompt>Using the available tools, find how many decimals the ERC-20 token at 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 uses. Reply with just the integer.</prompt>
+    <response>6</response>
+  </task>
+  <task>
+    <prompt>Using the available tools, find the chain id of the network the tools are connected to. Reply with just the integer.</prompt>
+    <response>1</response>
+  </task>
+  <task>
+    <prompt>Using the available tools, find the combined ETH balance of 0xde0B295669a9FD93d5F28D9Ec85E40f4cb697BAe and vitalik.eth at block 15000000. Reply with just the total as an integer wei value.</prompt>
+    <response>347474568185818817490738</response>
+  </task>
+  <task>
+    <prompt>Using the available tools, find the ENS name that the address 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045 reverse-resolves to. Reply with just the name.</prompt>
+    <response>vitalik.eth</response>
+  </task>
+  <task>
+    <prompt>Using the available tools, find how many transactions block 19000000 contained and what percentage of its gas limit was used. Reply exactly as COUNT,PERCENT where PERCENT has two decimals and no percent sign, e.g. 120,45.67</prompt>
+    <response>133,32.04</response>
+  </task>
+  <task>
+    <prompt>Using the available tools, find the transaction hash of the LAST (final) transaction in block 19000000. Reply with just the hash.</prompt>
+    <response>0x71f7584fd8aa8ca97308cc2dca5b776acacfd429449424c3c8b650df44ab0227</response>
+  </task>
+  <task>
+    <prompt>Using the available tools, find the raw (smallest-unit integer) token amount moved by the single ERC-20 Transfer event of transaction 0xa1cc1c77668d9d122c2649006822159a93a31e15602360e07d07e371a52f2da4. Reply with just the integer.</prompt>
+    <response>105799000000000000000</response>
+  </task>
+  <task>
+    <prompt>Using the available tools, find the ETH balance of vitalik.eth at block 99999999999. Reply with just the integer wei value.</prompt>
+    <response>NOT_FOUND</response>
+  </task>
+  <task>
+    <prompt>Using the available tools, find the revert reason string that transaction 0x5e8969e7aca00054bcc9c46ac6c692282ddd60839bfddb134b66a23adea62f76 failed with. Reply with just the reason string, without quotes.</prompt>
+    <response>UniswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT</response>
+  </task>
+  <task>
+    <prompt>Using the available tools, find how many ERC-20 Transfer events the USDC contract 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 emitted in blocks 19000000 through 19000010 inclusive. Reply with just the integer.</prompt>
+    <response>72</response>
+  </task>
+</tasks>

@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { Address } from '../../src/chain/types'
-import { createViemReader } from '../../src/chain/viem/client'
+import type { Address } from '../../src/core/chain/types'
+import { createViemReader } from '../../src/core/chain/viem/client'
 
 const SECRET_PATH = '/v3/super-secret-api-key'
 const VITALIK: Address = '0xd8da6bf26964af9d7eed9e03e53415d37aa96045'
@@ -39,13 +39,15 @@ afterEach(() => {
 })
 
 describe('unmapped provider error codes (leak regression)', () => {
-  it('maps an unknown code to rpc and never leaks the URL', { timeout: 15000 }, async () => {
+  it('maps an unknown code to UPSTREAM_POLICY and never leaks the URL', {
+    timeout: 15000,
+  }, async () => {
     const url = await serveRpcError(-32097, 'daily request cap reached')
     const reader = createViemReader({ url, timeoutMs: 2000 })
-    const result = await reader.balance(VITALIK, 'latest')
+    const result = await reader.account(VITALIK, 19000000n)
     expect(result.isErr()).toBe(true)
     const e = result._unsafeUnwrapErr()
-    expect(e.tag).toBe('rpc')
+    expect(e.category).toBe('UPSTREAM_POLICY')
     expect(JSON.stringify(e)).not.toContain('super-secret-api-key')
   })
 
@@ -54,10 +56,10 @@ describe('unmapped provider error codes (leak regression)', () => {
   }, async () => {
     const url = await serveRpcError(429, 'too many requests')
     const reader = createViemReader({ url, timeoutMs: 2000 })
-    const result = await reader.balance(VITALIK, 'latest')
+    const result = await reader.account(VITALIK, 19000000n)
     expect(result.isErr()).toBe(true)
     const e = result._unsafeUnwrapErr()
-    expect(e.tag).toBe('rate_limited')
+    expect(e.category).toBe('UPSTREAM_TRANSIENT')
     expect(JSON.stringify(e)).not.toContain('super-secret-api-key')
   })
 })
