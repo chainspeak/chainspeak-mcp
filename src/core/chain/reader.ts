@@ -49,6 +49,12 @@ export interface ChainReader {
     coinType?: number,
   ): ResultAsync<string | null, ChainError>
   tokenInfo(token: Address, atBlock: bigint): ResultAsync<TokenInfo, ChainError>
+  /** ERC-165 probe. A contract without ERC-165 answers false, never an error. */
+  supportsInterface(
+    address: Address,
+    interfaceId: `0x${string}`,
+    atBlock: bigint,
+  ): ResultAsync<boolean, ChainError>
   tokenBalance(token: Address, holder: Address, atBlock: bigint): ResultAsync<bigint, ChainError>
   getLogs(filter: LogFilter): ResultAsync<RangeLog[], ChainError>
   transaction(hash: Hash): ResultAsync<TransactionData | null, ChainError>

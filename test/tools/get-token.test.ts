@@ -1,8 +1,10 @@
 import { errAsync, okAsync } from 'neverthrow'
 import { describe, expect, it } from 'vitest'
-import { invalidInput } from '../../src/core/chain/errors'
+import { invalidInput, upstreamTransient } from '../../src/core/chain/errors'
+import type { Address, TokenInfo } from '../../src/core/chain/types'
 import { getToken, tokenHandler } from '../../src/core/tools/get-token'
 import { buildTool, createFakeReader, testCtx, VITALIK } from '../fakes/chain-reader'
+import { TOKENS } from '../fixtures/mainnet'
 
 const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
 
@@ -20,6 +22,7 @@ describe('chainspeak_get_token', () => {
       chain_id: '1',
       block_number: '19000000',
       token_address: USDC,
+      standard: 'erc20',
       name: 'USD Coin',
       symbol: 'USDC',
       decimals: 6,
@@ -112,5 +115,70 @@ describe('chainspeak_get_token', () => {
 
     expect(result.isErr()).toBe(true)
     expect(result._unsafeUnwrapErr().category).toBe('INVALID_INPUT')
+  })
+})
+
+describe('token standard detection', () => {
+  const asToken = (address: string) => address as Address
+  const OPENSEA = TOKENS.erc1155.value
+
+  const probing = (answers: Record<string, boolean>, info?: Partial<TokenInfo>) =>
+    createFakeReader({
+      supportsInterface: (_a, id) => okAsync(answers[id] ?? false),
+      tokenInfo: () =>
+        okAsync({
+          name: 'USD Coin',
+          symbol: 'USDC',
+          decimals: 6,
+          totalSupply: 1000000000000000n,
+          ...info,
+        }),
+    })
+
+  it('reports erc20 when ERC-165 denies both NFT interfaces and decimals exist', async () => {
+    const out = (await tokenHandler(parse({ token: USDC }), testCtx(probing({}))))._unsafeUnwrap()
+    expect(out.standard).toBe('erc20')
+  })
+
+  it('reports erc1155 for the pinned OpenSea Shared Storefront shape', async () => {
+    const fake = probing(
+      { '0xd9b67a26': true },
+      { name: 'OpenSea Shared Storefront', symbol: 'OPENSTORE', decimals: null, totalSupply: null },
+    )
+    const out = (
+      await tokenHandler(parse({ token: asToken(OPENSEA) }), testCtx(fake))
+    )._unsafeUnwrap()
+
+    expect(out.standard).toBe('erc1155')
+    // the shape that previously made an ERC-1155 indistinguishable from a broken ERC-20
+    expect(out.decimals).toBeNull()
+    expect(out.total_supply_raw).toBeNull()
+    expect(out.name).toBe(TOKENS.erc1155.expect.name)
+  })
+
+  it('reports erc721 ahead of the decimals tiebreak', async () => {
+    const fake = probing({ '0x80ac58cd': true }, { decimals: null, totalSupply: 10000n })
+    const out = (await tokenHandler(parse({ token: USDC }), testCtx(fake)))._unsafeUnwrap()
+    expect(out.standard).toBe('erc721')
+  })
+
+  it('answers null rather than guessing when the probe itself fails', async () => {
+    const fake = createFakeReader({
+      supportsInterface: () => errAsync(upstreamTransient('node busy', 'retry')),
+    })
+    const out = (await tokenHandler(parse({ token: USDC }), testCtx(fake)))._unsafeUnwrap()
+    // decimals exist, but an unchecked guess could relabel an NFT as fungible
+    expect(out.standard).toBeNull()
+  })
+
+  it('refuses a holder balance on erc1155 instead of returning a meaningless number', async () => {
+    const fake = probing({ '0xd9b67a26': true }, { decimals: null })
+    const e = (
+      await tokenHandler(parse({ token: asToken(OPENSEA), holder: VITALIK }), testCtx(fake))
+    )._unsafeUnwrapErr()
+
+    expect(e.category).toBe('INVALID_INPUT')
+    expect(e.message).toContain('per token id')
+    expect(e.hint).toContain('omit holder')
   })
 })

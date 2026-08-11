@@ -73,7 +73,7 @@ const fieldsOf = (schema: z.ZodObject): Field[] => {
 const SHAPE_DEBT: Record<string, { top: number; topNullable: number }> = {
   chainspeak_get_chain_status: { top: 16, topNullable: 7 },
   chainspeak_get_account: { top: 12, topNullable: 3 },
-  chainspeak_get_token: { top: 10, topNullable: 6 },
+  chainspeak_get_token: { top: 11, topNullable: 7 },
   chainspeak_get_transaction: { top: 27, topNullable: 21 },
   chainspeak_get_block: { top: 18, topNullable: 14 },
   chainspeak_get_events: { top: 8, topNullable: 1 },

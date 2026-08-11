@@ -44,6 +44,7 @@ export const createFakeReader = (overrides?: Partial<ChainReader>): ChainReader 
   reverseName: () => okAsync(null),
   tokenInfo: () =>
     okAsync({ name: 'USD Coin', symbol: 'USDC', decimals: 6, totalSupply: 1000000000000000n }),
+  supportsInterface: () => okAsync(false),
   tokenBalance: () => okAsync(123456789n),
   transaction: () =>
     okAsync({

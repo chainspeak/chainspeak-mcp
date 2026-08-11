@@ -1,9 +1,10 @@
-import { okAsync, type ResultAsync } from 'neverthrow'
+import { errAsync, okAsync, ResultAsync } from 'neverthrow'
 import { getAddress } from 'viem'
 import * as z from 'zod'
-import type { ChainError } from '../chain/errors'
+import { type ChainError, invalidInput } from '../chain/errors'
 import { scaleUnits } from '../chain/format'
-import { AddressOrNameSchema, AddressSchema, BlockRefSchema } from '../chain/types'
+import type { ChainReader } from '../chain/reader'
+import { type Address, AddressOrNameSchema, AddressSchema, BlockRefSchema } from '../chain/types'
 import { defineTool, type ToolArgs, type ToolCtx } from '../mcp/define-tool'
 import { resolveAddressInput } from '../mcp/ens'
 
@@ -19,10 +20,14 @@ const input = z.object({
   ),
 })
 
+const ERC721_INTERFACE = '0x80ac58cd' as const
+const ERC1155_INTERFACE = '0xd9b67a26' as const
+
 const output = z.object({
   chain_id: z.string(),
   block_number: z.string(),
   token_address: z.string(),
+  standard: z.enum(['erc20', 'erc721', 'erc1155']).nullable(),
   name: z.string().nullable(),
   symbol: z.string().nullable(),
   decimals: z.number().nullable(),
@@ -39,6 +44,28 @@ const output = z.object({
 })
 
 type Out = z.output<typeof output>
+type Standard = Out['standard']
+
+/**
+ * ERC-165 first, decimals only as a tiebreak. A failed probe answers null rather
+ * than falling through to "erc20": an unchecked guess here would relabel an NFT
+ * collection as a fungible token, and every amount below it would read wrong.
+ */
+const detectStandard = (
+  r: ChainReader,
+  token: Address,
+  atBlock: bigint,
+  decimals: number | null,
+): ResultAsync<Standard, ChainError> =>
+  ResultAsync.combine([
+    r.supportsInterface(token, ERC1155_INTERFACE, atBlock),
+    r.supportsInterface(token, ERC721_INTERFACE, atBlock),
+  ])
+    .map(
+      ([is1155, is721]): Standard =>
+        is1155 ? 'erc1155' : is721 ? 'erc721' : decimals !== null ? 'erc20' : null,
+    )
+    .orElse(() => okAsync<Standard, ChainError>(null))
 
 export const tokenHandler = (
   args: ToolArgs<typeof input>,
@@ -61,22 +88,36 @@ export const tokenHandler = (
                 ? null
                 : scaleUnits(info.totalSupply, info.decimals),
           }
-          if (args.holder === undefined) return okAsync({ ...base, holder: null })
-          return resolveAddressInput(ctx, args.chain, args.holder, pin).andThen(
-            ({ address, resolved_from: resolvedFrom }) =>
-              r.tokenBalance(args.token, address, pin.number).map(
-                (raw): Out => ({
-                  ...base,
-                  holder: {
-                    address: getAddress(address),
-                    resolved_from: resolvedFrom,
-                    balance_raw: raw.toString(),
-                    balance_formatted:
-                      info.decimals === null ? null : scaleUnits(raw, info.decimals),
-                  },
-                }),
-              ),
-          )
+          return detectStandard(r, args.token, pin.number, info.decimals).andThen((standard) => {
+            if (args.holder === undefined) return okAsync({ ...base, standard, holder: null })
+            // ERC-1155 balances are per token id, so a bare balanceOf(address) is
+            // not a question this contract can answer — say so instead of erroring
+            // out of viem with something opaque.
+            if (standard === 'erc1155') {
+              return errAsync<Out, ChainError>(
+                invalidInput(
+                  `${getAddress(args.token)} is an ERC-1155 contract, whose balances are per token id`,
+                  'this tool reads a single fungible balance and cannot express a per-id balance — omit holder to read the collection metadata, or query the specific token id with a contract-call tool',
+                ),
+              )
+            }
+            return resolveAddressInput(ctx, args.chain, args.holder, pin).andThen(
+              ({ address, resolved_from: resolvedFrom }) =>
+                r.tokenBalance(args.token, address, pin.number).map(
+                  (raw): Out => ({
+                    ...base,
+                    standard,
+                    holder: {
+                      address: getAddress(address),
+                      resolved_from: resolvedFrom,
+                      balance_raw: raw.toString(),
+                      balance_formatted:
+                        info.decimals === null ? null : scaleUnits(raw, info.decimals),
+                    },
+                  }),
+                ),
+            )
+          })
         }),
       ),
     ),
@@ -85,7 +126,7 @@ export const tokenHandler = (
 export const getToken = defineTool({
   name: 'chainspeak_get_token',
   description:
-    "ERC-20 token metadata, total supply, and optionally a holder's balance, in one call. Give token as the ERC-20 contract address. Metadata comes back ALWAYS — asking about a token does not require inventing a holder; add holder (address or ENS name, resolved at the same block) only when you want a balance. This is for ERC-20 tokens only — for the native ETH balance use chainspeak_get_account. Done via eth_call to the token's name, symbol, decimals, totalSupply, and (with holder) balanceOf. Returns raw smallest-unit integers as decimal strings plus decimals-adjusted formatted values (null when the token exposes no decimals); name, symbol, decimals, and total supply are null for nonstandard tokens that do not expose them — a normal answer, not an error. Every response echoes chain_id and the exact block_number it was answered at; addresses are EIP-55 checksummed. An address that is not an ERC-20 token at all returns an INVALID_INPUT error saying so.",
+    "ERC-20 token metadata, total supply, and optionally a holder's balance, in one call. Give token as the ERC-20 contract address. Metadata comes back ALWAYS — asking about a token does not require inventing a holder; add holder (address or ENS name, resolved at the same block) only when you want a balance. standard reports what the contract actually is, probed via ERC-165: erc20, erc721, erc1155, or null when it could not be determined — read it before trusting the amounts, because total_supply on an erc721 is a COUNT of NFTs rather than a token amount, and decimals is null for both NFT standards. Holder balances are only meaningful for erc20 and erc721; an erc1155 holder request returns INVALID_INPUT, since its balances are per token id. For the native ETH balance use chainspeak_get_account. Done via eth_call to the token's name, symbol, decimals, totalSupply, and (with holder) balanceOf. Returns raw smallest-unit integers as decimal strings plus decimals-adjusted formatted values (null when the token exposes no decimals); name, symbol, decimals, and total supply are null for nonstandard tokens that do not expose them — a normal answer, not an error. Every response echoes chain_id and the exact block_number it was answered at; addresses are EIP-55 checksummed. An address that is not an ERC-20 token at all returns an INVALID_INPUT error saying so.",
   input,
   output,
   idempotent: false,

@@ -40,6 +40,8 @@ import type {
 } from '../types'
 import { mapViemError } from './map-error'
 
+const erc165Abi = parseAbi(['function supportsInterface(bytes4) view returns (bool)'])
+
 const erc20Abi = parseAbi([
   'function balanceOf(address) view returns (uint256)',
   'function decimals() view returns (uint8)',
@@ -355,6 +357,23 @@ export function createViemReader(cfg: {
         ),
       )
     })
+
+  const supportsInterface = (
+    address: Address,
+    interfaceId: `0x${string}`,
+    atBlock: bigint,
+  ): ResultAsync<boolean, ChainError> =>
+    ResultAsync.fromPromise(
+      client.readContract({
+        address,
+        abi: erc165Abi,
+        functionName: 'supportsInterface',
+        args: [interfaceId],
+        blockNumber: atBlock,
+      }),
+      mapViemError,
+      // no ERC-165 means the contract reverts, which answers the question
+    ).orElse((e) => (isContractCallFailure(e) ? okAsync(false) : errAsync(e)))
 
   const transaction = (hash: Hash): ResultAsync<TransactionData | null, ChainError> => {
     const tx = ResultAsync.fromPromise(
@@ -676,6 +695,7 @@ export function createViemReader(cfg: {
     resolveName,
     reverseName,
     tokenInfo,
+    supportsInterface,
     tokenBalance,
     getLogs,
     transaction,

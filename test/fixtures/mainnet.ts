@@ -16,7 +16,7 @@ export interface Fixture {
   expect: Record<string, string | null>
 }
 
-export const TRANSACTIONS: Record<string, Fixture> = {
+export const TRANSACTIONS = {
   contractCreation: {
     covers: 'created_contract populated, to === null',
     value: '0x5eb1d5c3a43b8a39bd33c4104ed9cedb903db0aa3c1ef5a9c52e21092d25504a',
@@ -37,9 +37,9 @@ export const TRANSACTIONS: Record<string, Fixture> = {
       status: 'success',
     },
   },
-}
+} satisfies Record<string, Fixture>
 
-export const TOKENS: Record<string, Fixture> = {
+export const TOKENS = {
   erc1155: {
     covers: 'an ERC-1155 read as a token: name/symbol answer, supply and decimals do not',
     value: '0x495f947276749Ce646f68AC8c248420045cb7b5e',
@@ -55,7 +55,7 @@ export const TOKENS: Record<string, Fixture> = {
     value: '0x9f8F72aA9304c8B593d555F12eF6589cC3A579A2',
     expect: { symbol: 'MKR', decimals: '18' },
   },
-}
+} satisfies Record<string, Fixture>
 
 export const ENS_FACTS = {
   /** the Universal Resolver deployment height: below it ENS is unreadable */
