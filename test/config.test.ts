@@ -1,16 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import type { AppConfig } from '../src/config'
-import { loadConfig } from '../src/config'
+import type { AppConfig } from '../src/core/config'
+import { loadConfig } from '../src/core/config'
 
 describe('loadConfig', () => {
   it('accepts a minimal env and applies defaults', () => {
     const cfg = loadConfig({ ETH_RPC_URL: 'https://rpc.example.com' })
     expect(cfg).toEqual<AppConfig>({
+      CHAIN: 'ethereum',
       ETH_RPC_URL: 'https://rpc.example.com',
       ETH_RPC_TIMEOUT_MS: 10000,
       LOG_LEVEL: 'info',
       HTTP_PORT: 3000,
       HTTP_HOST: '0.0.0.0',
+      rpcs: [{ selector: 'ethereum', url: 'https://rpc.example.com' }],
     })
     expect(cfg.ETH_RPC_URL_FALLBACK).toBeUndefined()
     expect(cfg.MCP_AUTH_TOKEN).toBeUndefined()
@@ -18,6 +20,7 @@ describe('loadConfig', () => {
 
   it('accepts all fields set, coercing numbers', () => {
     const cfg = loadConfig({
+      CHAIN: 'base',
       ETH_RPC_URL: 'https://rpc.example.com',
       ETH_RPC_URL_FALLBACK: 'https://fallback.example.com',
       ETH_RPC_TIMEOUT_MS: '5000',
@@ -27,6 +30,7 @@ describe('loadConfig', () => {
       MCP_AUTH_TOKEN: 'a-long-enough-secret-token',
     })
     expect(cfg).toEqual<AppConfig>({
+      CHAIN: 'base',
       ETH_RPC_URL: 'https://rpc.example.com',
       ETH_RPC_URL_FALLBACK: 'https://fallback.example.com',
       ETH_RPC_TIMEOUT_MS: 5000,
@@ -34,6 +38,13 @@ describe('loadConfig', () => {
       HTTP_PORT: 8080,
       HTTP_HOST: '127.0.0.1',
       MCP_AUTH_TOKEN: 'a-long-enough-secret-token',
+      rpcs: [
+        {
+          selector: 'base',
+          url: 'https://rpc.example.com',
+          fallbackUrl: 'https://fallback.example.com',
+        },
+      ],
     })
   })
 
@@ -72,4 +83,48 @@ describe('loadConfig', () => {
       expect(() => loadConfig(env)).toThrow(needle)
     })
   }
+})
+
+describe('multi-chain RPC configuration', () => {
+  it('collects one endpoint per RPC_URL_<CHAIN>', () => {
+    const cfg = loadConfig({
+      RPC_URL_ETHEREUM: 'https://eth.example.com',
+      RPC_URL_BASE: 'https://base.example.com',
+      RPC_URL_ARBITRUM: 'https://arb.example.com',
+    })
+    expect(cfg.rpcs).toEqual([
+      { selector: 'ethereum', url: 'https://eth.example.com' },
+      { selector: 'base', url: 'https://base.example.com' },
+      { selector: 'arbitrum', url: 'https://arb.example.com' },
+    ])
+  })
+
+  it('pairs a fallback with its primary, and accepts multi-word chain names', () => {
+    const cfg = loadConfig({
+      RPC_URL_OP_MAINNET: 'https://op.example.com',
+      RPC_URL_OP_MAINNET_FALLBACK: 'https://op2.example.com',
+    })
+    expect(cfg.rpcs).toEqual([
+      {
+        selector: 'op-mainnet',
+        url: 'https://op.example.com',
+        fallbackUrl: 'https://op2.example.com',
+      },
+    ])
+  })
+
+  it('keeps ETH_RPC_URL working, attributing it to CHAIN', () => {
+    const cfg = loadConfig({ CHAIN: 'base', ETH_RPC_URL: 'https://base.example.com' })
+    expect(cfg.rpcs).toEqual([{ selector: 'base', url: 'https://base.example.com' }])
+  })
+
+  it('rejects a fallback with no primary rather than silently ignoring it', () => {
+    expect(() => loadConfig({ RPC_URL_BASE_FALLBACK: 'https://base2.example.com' })).toThrow(
+      /without its primary/,
+    )
+  })
+
+  it('rejects an env with no endpoint at all', () => {
+    expect(() => loadConfig({})).toThrow(/no RPC endpoint configured/)
+  })
 })

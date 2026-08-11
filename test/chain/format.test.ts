@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { scaleUnits, weiToDual, weiToGwei } from '../../src/chain/format'
+import { scaleUnits, weiToDual, weiToGwei } from '../../src/core/chain/format'
 
 describe('scaleUnits', () => {
   const cases: Array<[bigint, number, string]> = [
@@ -37,16 +37,16 @@ describe('weiToDual', () => {
   it('returns raw wei string and ether decimal string', () => {
     expect(weiToDual(1_500_000_000_000_000_000n)).toEqual({
       wei: '1500000000000000000',
-      eth: '1.5',
+      native: '1.5',
     })
   })
 
   it('handles 1 wei', () => {
-    expect(weiToDual(1n)).toEqual({ wei: '1', eth: '0.000000000000000001' })
+    expect(weiToDual(1n)).toEqual({ wei: '1', native: '0.000000000000000001' })
   })
 
   it('handles zero', () => {
-    expect(weiToDual(0n)).toEqual({ wei: '0', eth: '0' })
+    expect(weiToDual(0n)).toEqual({ wei: '0', native: '0' })
   })
 })
 

@@ -2,14 +2,21 @@
 
 MCP server that lets LLMs read Ethereum chain data over JSON-RPC. Read-only, no keys, no signing.
 
-Tools:
+Tools — capability clusters, not endpoint wrappers:
 
-- `eth_get_chain_info` — chain id, latest block, current base fee
-- `eth_get_balance` — native ETH balance of an address (wei + ether)
-- `eth_get_token_balance` — ERC-20 balance with token metadata
-- `eth_get_transaction` — transaction summary by hash: status, value, gas, fee paid
-- `eth_resolve_ens` — forward-resolve an ENS name (vitalik.eth) to its address
-- `eth_get_gas_price` — base fee + suggested priority fee + likely total per gas
+- `chainspeak_get_chain_status` — chain id + name, latest block, base fee, gas tiers (slow/standard/fast), "a transfer costs ~X ETH now", blob fee, sync flag, and probed `upstream` capabilities (archive / trace / batch cap)
+- `chainspeak_get_account` — balance, nonce, is_contract, EIP-7702 delegation, verified reverse ENS; takes an address OR an ENS name, resolved at the same block as the read
+- `chainspeak_get_token` — ERC-20 metadata + total supply (no holder needed), optional holder balance, historical `block` support
+- `chainspeak_get_transaction` — status, value, gas_limit + gas_used (+%), fee paid precomputed, confirmations, decoded method + ERC-20/721 transfers; failed txs get `failure: {reason, method, confidence}` via debug trace or honest eth_call replay; `detail: summary|full|raw`
+- `chainspeak_get_block` — header, tx count, gas fullness, base fee; `detail` adds tx hashes or full transactions, paginated with steering truncation messages
+- `chainspeak_get_events` — contract event logs by preset (`transfers`/`approvals` for an account or a whole token, `raw` by contract/topics); Transfer/Approval decoded, everything else honestly `decoded: false`; bounded ranges, paginated
+- `chainspeak_resolve_name` — ENS both directions (name→address, address→name with forward verification), block-pinned, EIP-55 output
+
+Conventions every tool follows: responses echo `{chain_id, block_number}`; addresses are EIP-55 checksummed; chain quantities are decimal strings with human-readable twins; blocks accept decimal, 0x-hex, or tags; errors are `{category, retryable, message, hint}` where the hint says what to change — deterministic provider rejections are never labeled retryable.
+
+> **RPC note:** historical-state queries need an archive-capable endpoint — the publicnode
+> default is NOT archive; https://eth.drpc.org (free) is. drpc's free tier caps JSON-RPC
+> batches at 3, which the server respects automatically.
 
 ## Requirements
 
@@ -20,7 +27,7 @@ Tools:
 
 ```sh
 pnpm install
-cp .env.example .env   # set ETH_RPC_URL to your JSON-RPC endpoint
+cp .env.example .env   # set one RPC_URL_<CHAIN> per chain you want
 pnpm build
 ```
 
@@ -31,19 +38,32 @@ Add to your MCP client config, e.g. `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "eth-rpc": {
+    "chainspeak": {
       "command": "node",
       "args": ["/absolute/path/to/chainspeak-mcp/dist/stdio.mjs"],
-      "env": { "ETH_RPC_URL": "https://ethereum-rpc.publicnode.com" }
+      "env": {
+        "RPC_URL_ETHEREUM": "https://eth.drpc.org",
+        "RPC_URL_BASE": "https://base.drpc.org",
+        "RPC_URL_ARBITRUM": "https://arbitrum.drpc.org"
+      }
     }
   }
 }
 ```
 
+Add one `RPC_URL_<CHAIN>` per chain. Every tool then takes a `chain` parameter, and
+account, transaction and chain-status queries read **all** configured chains by default —
+so "what does this address hold?" answers across ethereum, base and arbitrum in one call.
+ENS names work on every chain but are always resolved on ethereum, so keep
+`RPC_URL_ETHEREUM` set unless you only ever pass 0x addresses.
+
 Or with Claude Code:
 
 ```sh
-claude mcp add eth-rpc -e ETH_RPC_URL=https://ethereum-rpc.publicnode.com \
+claude mcp add chainspeak \
+  -e RPC_URL_ETHEREUM=https://eth.drpc.org \
+  -e RPC_URL_BASE=https://base.drpc.org \
+  -e RPC_URL_ARBITRUM=https://arbitrum.drpc.org \
   -- node /absolute/path/to/chainspeak-mcp/dist/stdio.mjs
 ```
 
@@ -70,13 +90,21 @@ docker compose up --build
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `ETH_RPC_URL` | yes | — | primary JSON-RPC endpoint |
+| `RPC_URL_<CHAIN>` | one of these | — | endpoint for that chain, e.g. `RPC_URL_BASE` |
+| `RPC_URL_<CHAIN>_FALLBACK` | no | — | second endpoint for that chain |
+| `CHAIN` | no | `ethereum` | chain used when a call names none; must be configured |
+| `ETH_RPC_URL` | one of these | — | single-chain shorthand: the endpoint for `CHAIN` |
 | `ETH_RPC_URL_FALLBACK` | no | — | second endpoint for failover |
 | `ETH_RPC_TIMEOUT_MS` | no | `10000` | per-request timeout |
 | `LOG_LEVEL` | no | `info` | pino level, logs go to stderr |
 | `MCP_AUTH_TOKEN` | no | — | bearer token, min 16 chars; when set clients must send it, unset runs open |
 | `HTTP_PORT` | no | `3000` | HTTP listen port |
 | `HTTP_HOST` | no | `0.0.0.0` | HTTP listen host |
+
+Known chains: `ethereum`, `base`, `op-mainnet`, `arbitrum-one`, `polygon`, `bnb-smart-chain`,
+`gnosis`, `linea-mainnet`, `sepolia`, `holesky`. Short aliases (`op`, `arbitrum`, `bnb`, `linea`)
+and chain ids (`RPC_URL_8453`) also work. The server refuses to start if an endpoint reports a
+different chain id than the name it was configured under.
 
 ## Development
 

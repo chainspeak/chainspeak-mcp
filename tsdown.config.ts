@@ -1,9 +1,9 @@
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
-  entry: { stdio: 'src/main/stdio.ts', http: 'src/main/http.ts' },
+  entry: { index: 'src/index.ts', stdio: 'src/adapters/stdio.ts', http: 'src/adapters/http.ts' },
   format: 'esm',
   platform: 'node',
   clean: true,
-  dts: false,
+  dts: true,
 })
