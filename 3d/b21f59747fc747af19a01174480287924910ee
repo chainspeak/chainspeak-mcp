@@ -1,0 +1,21 @@
+CUTOVER.md
+  s_3f7a17db082cee::t_2f40aab01d90a6 8-14,16-22,85,91-92,94-99,189-190,192
+wrangler.jsonc
+  s_3f7a17db082cee::t_2bab7d11a541af 3-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "3db21f59747fc747af19a01174480287924910ee",
+  "prompts": {},
+  "sessions": {
+    "s_3f7a17db082cee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d9d425a9-cef7-4c32-ba21-9392e8a069a7",
+        "model": "claude-fable-5"
+      },
+      "human_author": "binarch <binarchdev@gmail.com>"
+    }
+  }
+}
