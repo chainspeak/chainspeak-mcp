@@ -1,0 +1,24 @@
+CUTOVER.md
+  s_3f7a17db082cee::t_b310e631e16d85 18-47,107-108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "d2a7aa20d0bafe105e0743f3c4c1a2b5bf353748",
+  "prompts": {},
+  "humans": {
+    "h_3aab5199160e7d": {
+      "author": "binarch <binarchdev@gmail.com>"
+    }
+  },
+  "sessions": {
+    "s_3f7a17db082cee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d9d425a9-cef7-4c32-ba21-9392e8a069a7",
+        "model": "claude-fable-5"
+      },
+      "human_author": "binarch <binarchdev@gmail.com>"
+    }
+  }
+}
