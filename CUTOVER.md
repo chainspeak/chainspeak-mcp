@@ -5,13 +5,21 @@ video-01 code to the current code in this repo (`chainspeak-mcp@0.1.0`).
 
 Run everything from this repo, on branch **`cutover-video-02`**.
 
+> The live worker behind try.chainspeak.dev is named **`basic-mcp-rpc-example`**
+> (confirmed in the Cloudflare dashboard: it holds the try.chainspeak.dev route
+> plus one other). The *repo* was renamed to chainspeak-mcp; the *worker* was
+> not, and there is no worker named `chainspeak-mcp` on the account. That is why
+> `wrangler.jsonc` must keep `"name": "basic-mcp-rpc-example"`: deploying under
+> any other name creates a *new* worker and strands the domain on the old code.
+>
 > The landing worker (`chainspeak-landing`, repo `landing-snippet`) owns the
-> exact-root HTML route for `chainspeak.dev` / `try.chainspeak.dev` and forwards
-> MCP traffic through a **service binding to a script named `chainspeak-mcp`**.
-> This cutover does **not** touch the landing worker at all — no route changes,
-> no redeploy there. That is exactly why `wrangler.jsonc` must keep
-> `"name": "chainspeak-mcp"`: deploying under any other name creates a *second*,
-> unreferenced Worker and leaves the live domain on the old code.
+> exact-root HTML route and is **not touched** by this cutover — no route
+> changes, no redeploy there.
+>
+> ⚠️ `landing-snippet/deploy.sh` sets `MCP_WORKER=chainspeak-mcp`. That is wrong
+> and must be corrected to `basic-mcp-rpc-example` **before any landing
+> redeploy**, or the root-route service binding will point at a worker that does
+> not exist.
 
 ---
 
@@ -74,33 +82,21 @@ npx wrangler login
 
 ## 2. Verify the script name before deploying
 
-Confirm which Worker scripts actually exist in the account and when they last
-shipped:
+Confirm the script exists and when it last shipped:
 
 ```bash
-npx wrangler deployments list --name chainspeak-mcp
 npx wrangler deployments list --name basic-mcp-rpc-example
 ```
 
-> Not verified by the agent that prepared this branch: `npx wrangler whoami`
-> reported *not authenticated*, so no Cloudflare API call was made. This is the
-> first thing you check after logging in.
+Expected: **`basic-mcp-rpc-example` exists**, with its last deployment being the
+old video-01 code. This is the worker holding the try.chainspeak.dev route.
 
-Expected: **`chainspeak-mcp` exists** (this is the script the landing worker's
-service binding points at, and the one serving try.chainspeak.dev today; its
-last deployment should be the old video-01 code).
-
-- If `chainspeak-mcp` errors with "script not found" and `basic-mcp-rpc-example`
-  is the one that exists → **stop**. The live script is named differently than
-  assumed; re-check the landing worker's service binding (`wrangler.jsonc` in
-  `landing-snippet`) and set `name` in this repo to whatever that binding
-  targets before deploying.
-
-Optional extra confirmation of the binding target:
-
-```bash
-grep -n "service" ../landing-snippet/wrangler.jsonc
-```
+- If it errors with "script not found" → **stop** and re-check the name in the
+  Cloudflare dashboard (Workers & Pages → the worker that owns the
+  try.chainspeak.dev route) before deploying anything.
+- `npx wrangler deployments list --name chainspeak-mcp` should error — no such
+  worker exists. If it ever starts existing, someone deployed a stray copy under
+  the repo name; delete it rather than pointing the domain at it.
 
 ## 3. Dry run, then deploy
 
@@ -190,10 +186,10 @@ curl -s -o /dev/null -w '%{http_code}\n' https://try.chainspeak.dev/   # served 
 If any check fails, roll back to the previous deployment immediately:
 
 ```bash
-npx wrangler deployments list --name chainspeak-mcp   # find the previous version id
-npx wrangler rollback --name chainspeak-mcp           # interactive: pick previous
+npx wrangler deployments list --name basic-mcp-rpc-example   # find the previous version id
+npx wrangler rollback --name basic-mcp-rpc-example           # interactive: pick previous
 # or, non-interactive, straight to a known-good version:
-npx wrangler rollback <VERSION_ID> --name chainspeak-mcp --message "revert video-02 cutover"
+npx wrangler rollback <VERSION_ID> --name basic-mcp-rpc-example --message "revert video-02 cutover"
 ```
 
 Rollback is instant and does not touch the landing worker. Re-run the step 4a/4b

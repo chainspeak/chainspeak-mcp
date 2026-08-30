@@ -1,10 +1,11 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  // Must stay "chainspeak-mcp": try.chainspeak.dev is served by the separate
-  // `chainspeak-landing` worker, which forwards MCP traffic through a service
-  // binding to a script named exactly `chainspeak-mcp`. Renaming this would
-  // deploy a second, unreferenced worker and leave the live domain on the old code.
-  "name": "chainspeak-mcp",
+  // Must stay "basic-mcp-rpc-example": that is the name of the live worker behind
+  // try.chainspeak.dev (verified in the Cloudflare dashboard — it holds the
+  // try.chainspeak.dev route). The REPO was renamed to chainspeak-mcp, the WORKER
+  // was not, and no worker named `chainspeak-mcp` exists on the account. Deploying
+  // under any other name creates a new worker and strands the domain on the old code.
+  "name": "basic-mcp-rpc-example",
   "main": "src/adapters/worker.ts",
   "compatibility_date": "2026-01-01",
   "compatibility_flags": ["nodejs_compat"],
