@@ -1,10 +1,24 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "basic-mcp-rpc-example",
+  // Must stay "chainspeak-mcp": try.chainspeak.dev is served by the separate
+  // `chainspeak-landing` worker, which forwards MCP traffic through a service
+  // binding to a script named exactly `chainspeak-mcp`. Renaming this would
+  // deploy a second, unreferenced worker and leave the live domain on the old code.
+  "name": "chainspeak-mcp",
   "main": "src/adapters/worker.ts",
   "compatibility_date": "2026-01-01",
   "compatibility_flags": ["nodejs_compat"],
   "observability": {
     "enabled": true
+  },
+  // Public free RPC endpoints — no API keys here, nothing secret.
+  // MCP_AUTH_TOKEN is deliberately NOT set: try.chainspeak.dev is a public endpoint.
+  "vars": {
+    "RPC_URL_ETHEREUM": "https://eth.drpc.org",
+    "RPC_URL_ETHEREUM_FALLBACK": "https://ethereum-rpc.publicnode.com",
+    "RPC_URL_BASE": "https://base.drpc.org",
+    "RPC_URL_ARBITRUM": "https://arbitrum.drpc.org",
+    "CHAIN": "ethereum",
+    "LOG_LEVEL": "info"
   }
 }
