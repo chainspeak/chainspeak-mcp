@@ -1,0 +1,23 @@
+.gitignore
+  s_3f7a17db082cee::t_4ef8998164129c 11
+CUTOVER.md
+  s_3f7a17db082cee::t_c0906ced841ea3 1-228
+wrangler.jsonc
+  s_3f7a17db082cee::t_ca7372368c7c74 3-7,13-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "4a02020bd6be8c2628dc9087c8ca6b8b6aeba037",
+  "prompts": {},
+  "sessions": {
+    "s_3f7a17db082cee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d9d425a9-cef7-4c32-ba21-9392e8a069a7",
+        "model": "claude-fable-5"
+      },
+      "human_author": "binarch <binarchdev@gmail.com>"
+    }
+  }
+}
