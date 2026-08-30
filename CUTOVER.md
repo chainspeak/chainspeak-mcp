@@ -15,54 +15,36 @@ Run everything from this repo, on branch **`cutover-video-02`**.
 
 ---
 
-## ⛔ BLOCKER — fix this before deploying
+## ✅ Fixed before deploy — workerd hang after `initialize`
 
-Found during the local smoke test on 2026-08-30 (`wrangler dev --local`,
-this exact config). **Do not deploy until this is fixed** — the current
-`main` code hangs on Cloudflare in the normal client flow.
+Found and fixed on this branch on 2026-08-30 (commit *"fix worker: drop
+fire-and-forget verifyChains"*). Recorded here because the failure mode is
+invisible to a shallow health check.
 
-**Symptom.** In a fresh isolate:
+**Symptom (before the fix).** In a fresh isolate, if the first request was
+anything other than a tool call — i.e. the `initialize` every MCP client sends
+— then *every* later `tools/call` in that isolate never responded: the SSE
+stream opened with `200 OK` and stayed silent forever (reproduced at 20 s, 60 s
+and 90 s client timeouts; one worker span recorded `outcome=ok,
+duration_ms=180249`). `/healthz` and `tools/list` kept working the whole time,
+so the worker looked green while every real query hung.
 
-- if the *first* request is a `tools/call`, it works (≈0.9–2.7 s, correct block);
-- if the first request is anything else (`initialize`, which is what every MCP
-  client sends first), then **every subsequent `tools/call` in that isolate
-  never responds**. The SSE stream opens with `200 OK` and stays silent
-  forever — no error, no log line, no timeout. Reproduced with a 20 s, a 60 s
-  and a 90 s client timeout; a captured worker span shows `outcome=ok,
-  duration_ms=180249`.
+**Cause.** `build(env)` runs inside the first request, and
+`void verifyChains(deps.registry)` started RPC fetches that were never awaited
+and never attached to `ctx.waitUntil`. workerd tears that request's I/O context
+down when the response completes, so those fetches could never settle — and the
+module-cached viem client (http transport, `batch: { batchSize: 3 }`) kept the
+unsettled promise, making every later call await something that can never resolve.
 
-In production that means: an MCP client connects, initializes, and every tool
-call afterwards hangs until the isolate is recycled. `/healthz` and
-`tools/list` keep working, so a shallow check looks green.
+**Fix.** That one line is gone from `src/adapters/worker.ts`; the comment there
+explains why it must not come back. The `stdio` and `http` adapters, which have
+a process-long context, still verify chain ids at startup.
 
-**Root cause.** `src/adapters/worker.ts`:
-
-```ts
-void verifyChains(deps.registry).mapErr((e) => deps.log.error({ hint: e.hint }, e.message))
-```
-
-`build(env)` runs inside the *first* request, and this fire-and-forget call
-starts RPC fetches that are never awaited and never attached to
-`ctx.waitUntil` — the worker's `fetch(req, env)` does not even take `ctx`.
-When that first response completes, workerd tears the request's I/O context
-down and those in-flight fetches can never settle. The viem client is cached
-in the module-scope `cached` closure and its http transport runs with
-`batch: { batchSize: 3 }`, so the unsettled batch/promise stays in the client's
-cache and every later call awaits a promise that can never resolve.
-
-**Verified fix.** Deleting that one line makes the flow work: `initialize`
-then `tools/call` returned a live block in 0.87 s in the same isolate. Options,
-in order of preference:
-
-1. Drop `verifyChains` from the worker adapter (it is log-only there anyway;
-   the stdio/http adapters keep it), or
-2. keep it but give it a real context: change the handler to
-   `fetch(req, env, ctx)` and `ctx.waitUntil(verifyChains(...))` — this still
-   races a second request arriving while the verify is in flight, so (1) is safer, or
-3. run the check lazily inside the request that needs it.
-
-After fixing, re-run the local smoke test in step 4 order (initialize →
-tools/list → tools/call) against `wrangler dev` before deploying.
+**Verified after the fix** (`wrangler dev --local`, exact previously-failing
+sequence): `/healthz` 200 in 1 ms → `initialize` in 10 ms → `tools/list` with
+all seven tools → `chainspeak_get_chain_status` block **25870099** in 1.98 s →
+`chainspeak_get_block` in 0.25 s → `chainspeak_get_chain_status` again, all in
+the same isolate, three `tool ok` log lines, no hang.
 
 ---
 
@@ -122,9 +104,8 @@ grep -n "service" ../landing-snippet/wrangler.jsonc
 
 ## 3. Dry run, then deploy
 
-> Only after the BLOCKER above is fixed and the local smoke test passes.
-> Dry run on this config already builds clean: **Total Upload 1451.97 KiB /
-> gzip 286.89 KiB**, six env vars bound, `nodejs_compat` on.
+> Dry run on this config builds clean: **Total Upload 1451.35 KiB /
+> gzip 286.69 KiB**, six env vars bound, `nodejs_compat` on.
 
 ```bash
 npx wrangler deploy --dry-run --outdir dist-worker   # sanity: bundles clean
