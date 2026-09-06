@@ -1,13 +1,21 @@
 /**
  * `retryable` is true ONLY for UPSTREAM_TRANSIENT, and `hint` must say what to
  * CHANGE — never a bare "try again". UPSTREAM_POLICY means retrying unchanged
- * WILL fail again (batch caps, range caps, exhausted quota).
+ * WILL fail again (batch caps, range caps, a plan that does not include the
+ * method).
+ *
+ * A spent-but-refilling usage allowance is NOT policy: it is transient, and it
+ * carries `retryAfterMs` so the caller waits instead of spinning. "Wait this
+ * long" and "do not retry" are different instructions, and conflating them is
+ * what made this server tell an agent a call was impossible minutes before the
+ * identical call succeeded.
  */
 
 export type ErrorCategory =
   | 'INVALID_INPUT'
   | 'NOT_FOUND'
   | 'UNSUPPORTED'
+  | 'HISTORICAL_STATE_UNAVAILABLE'
   | 'UPSTREAM_TRANSIENT'
   | 'UPSTREAM_POLICY'
   | 'INTERNAL'
@@ -17,7 +25,11 @@ export interface ChainError {
   retryable: boolean
   message: string
   hint: string
-  /** provider-suggested wait (ms) before a retryable error may succeed; null = unknown */
+  /**
+   * How long to wait before a retryable error may succeed, in ms. The
+   * provider's own suggestion when it made one (Retry-After); otherwise this
+   * server's floor for a refilling allowance. null = unknown.
+   */
   retryAfterMs?: number | null
   /**
    * Internal control-flow marker: the failure was a deterministic contract-call
@@ -43,6 +55,25 @@ export const notFound = (message: string, hint: string): ChainError => ({
 
 export const unsupported = (message: string, hint: string): ChainError => ({
   category: 'UNSUPPORTED',
+  retryable: false,
+  message,
+  hint,
+})
+
+/**
+ * The node could not serve state at this historical block — it is pruned, or the
+ * block predates the chain's own migration.
+ *
+ * Its own category on purpose. This is the ONLY honest place to learn that an
+ * endpoint's history is limited: the server no longer probes for archive support
+ * up front, because a probe answers before anyone asked the real question and
+ * caches whatever it guessed. Here the block that actually failed is known, so
+ * the hint can name both ways out. Distance is the first thing to try: most
+ * "archive" failures are a read a few hundred thousand blocks too deep, not an
+ * endpoint that can never serve history.
+ */
+export const historicalStateUnavailable = (message: string, hint: string): ChainError => ({
+  category: 'HISTORICAL_STATE_UNAVAILABLE',
   retryable: false,
   message,
   hint,

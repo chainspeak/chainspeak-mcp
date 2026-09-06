@@ -8,3 +8,4 @@ coverage/
 .dev.vars
 .wrangler/
 .DS_Store
+dist-worker/

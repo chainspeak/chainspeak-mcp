@@ -50,16 +50,47 @@ describe('campaign bug 5: a provider timeout is transient, whatever code it arri
     expect(e.hint).not.toContain('will fail again')
   })
 
-  it('still calls a genuine quota rejection deterministic', async () => {
+  /**
+   * The fixture that hid the bug. The case above passed for weeks against
+   * 'Request timeout on the free plan' — but drpc actually sends 'Request
+   * timeout on the free plan, please upgrade to paid plan', and those extra
+   * words used to flip a literal TIMEOUT to non-retryable, because "upgrade"
+   * sat inside the quota pattern. Fixtures here are now verbatim.
+   */
+  it('classifies the REAL drpc timeout string, billing upsell and all, as retryable', async () => {
     const url = await serveError(
-      -32001,
-      "You've reached the usage limit for your current plan. Please upgrade",
+      30,
+      'Request timeout on the free plan, please upgrade to paid plan',
     )
     const reader = createViemReader({ chain: mainnet, url, timeoutMs: 2000 })
 
     const e = (await reader.account(VITALIK, 19000000n))._unsafeUnwrapErr()
 
-    expect(e.category).toBe('UPSTREAM_POLICY')
+    expect(e.category).toBe('UPSTREAM_TRANSIENT')
+    expect(e.retryable).toBe(true)
+    expect(e.hint).not.toContain('will fail again')
+  })
+
+  it('treats an exhausted usage allowance as transient WITH a wait, not as a refusal', async () => {
+    const url = await serveError(
+      -32001,
+      "You've reached the usage limit for your current plan. To continue with higher limits and uninterrupted access, please upgrade here: https://www.1rpc.io/#pricing",
+    )
+    const reader = createViemReader({ chain: mainnet, url, timeoutMs: 2000 })
+
+    const e = (await reader.account(VITALIK, 19000000n))._unsafeUnwrapErr()
+
+    expect(e.category).toBe('UPSTREAM_TRANSIENT')
+    expect(e.retryable).toBe(true)
+    expect(e.retryAfterMs ?? 0).toBeGreaterThan(0)
+  })
+
+  it('still refuses a plan gate: a method the plan excludes is not a waiting game', async () => {
+    const url = await serveError(-32004, 'this method requires a paid plan')
+    const reader = createViemReader({ chain: mainnet, url, timeoutMs: 2000 })
+
+    const e = (await reader.account(VITALIK, 19000000n))._unsafeUnwrapErr()
+
     expect(e.retryable).toBe(false)
   })
 })

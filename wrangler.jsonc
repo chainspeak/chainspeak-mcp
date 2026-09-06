@@ -1,10 +1,25 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
+  // Must stay "basic-mcp-rpc-example": that is the name of the live worker behind
+  // try.chainspeak.dev (verified in the Cloudflare dashboard — it holds the
+  // try.chainspeak.dev route). The REPO was renamed to chainspeak-mcp, the WORKER
+  // was not, and no worker named `chainspeak-mcp` exists on the account. Deploying
+  // under any other name creates a new worker and strands the domain on the old code.
   "name": "basic-mcp-rpc-example",
   "main": "src/adapters/worker.ts",
   "compatibility_date": "2026-01-01",
   "compatibility_flags": ["nodejs_compat"],
   "observability": {
     "enabled": true
+  },
+  // Public free RPC endpoints — no API keys here, nothing secret.
+  // MCP_AUTH_TOKEN is deliberately NOT set: try.chainspeak.dev is a public endpoint.
+  "vars": {
+    "RPC_URL_ETHEREUM": "https://eth.drpc.org",
+    "RPC_URL_ETHEREUM_FALLBACK": "https://ethereum-rpc.publicnode.com",
+    "RPC_URL_BASE": "https://base.drpc.org",
+    "RPC_URL_ARBITRUM": "https://arbitrum.drpc.org",
+    "CHAIN": "ethereum",
+    "LOG_LEVEL": "info"
   }
 }

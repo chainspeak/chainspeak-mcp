@@ -148,6 +148,21 @@ export interface RangeLog {
   logIndex: number
 }
 
+/**
+ * The result of walking a block range in windows.
+ *
+ * `scannedTo` is the honest part: it says how far the walk actually got, so a
+ * caller can tell "there are no more events" from "we stopped early with a full
+ * page" — without the server fetching an entire range to answer one page.
+ */
+export interface LogScan {
+  logs: RangeLog[]
+  /** last block actually scanned, inclusive; below the requested toBlock if we stopped early */
+  scannedTo: bigint
+  /** the window the provider actually accepted — what it allows, not what we assumed */
+  windowUsed: bigint
+}
+
 export interface FailureAnalysis {
   reason: string | null
   revertData: `0x${string}` | null

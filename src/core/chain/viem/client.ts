@@ -32,6 +32,7 @@ import type {
   GasOutlook,
   Hash,
   LogFilter,
+  LogScan,
   NameResolution,
   PinnedBlock,
   RangeLog,
@@ -475,6 +476,100 @@ export function createViemReader(cfg: {
       }))
     })
 
+  /**
+   * The window this endpoint has actually proved it will accept. Starts at the
+   * caller's hint and is corrected downward by real refusals — the point being
+   * that no hardcoded number is trustworthy. The field test found the gateway
+   * advertising 10,000 blocks while the provider refused 10,000 and accepted
+   * 4,883; the caller could not learn which limit applied until something broke.
+   */
+  let learnedWindow: bigint | undefined
+  let goodRuns = 0
+  /**
+   * The smallest window this endpoint has ever refused. Growth must stay below
+   * it, or the scan oscillates: grow, get refused, halve, grow, get refused —
+   * paying a rejected round trip (and the transport's retries) every few
+   * windows. A refusal is information; forgetting it is what makes a probe-free
+   * design slow instead of adaptive.
+   */
+  let refusedAt: bigint | undefined
+
+  const scanLogs = (
+    filters: readonly LogFilter[],
+    opts: { stopAfter: number; windowHint: bigint },
+  ): ResultAsync<LogScan, ChainError> => {
+    const first = filters[0]
+    if (first === undefined) {
+      return okAsync({ logs: [], scannedTo: 0n, windowUsed: opts.windowHint })
+    }
+    const from = first.fromBlock
+    const to = first.toBlock
+    const ceiling = opts.windowHint > 0n ? opts.windowHint : 1n
+    learnedWindow ??= ceiling
+
+    const fetchWindow = async (f: LogFilter, lo: bigint, hi: bigint): Promise<RangeLog[]> => {
+      const res = await getLogs({ ...f, fromBlock: lo, toBlock: hi })
+      if (res.isErr()) throw res.error
+      return res.value
+    }
+
+    const walk = async (): Promise<LogScan> => {
+      const logs: RangeLog[] = []
+      const seen = new Set<string>()
+      let cursor = from
+      let scannedTo = from - 1n
+
+      while (cursor <= to && logs.length <= opts.stopAfter) {
+        const window = learnedWindow ?? ceiling
+        const hi = cursor + window - 1n > to ? to : cursor + window - 1n
+        try {
+          const pages = await Promise.all(filters.map((f) => fetchWindow(f, cursor, hi)))
+          for (const log of pages.flat()) {
+            const key = `${log.blockNumber}-${log.logIndex}`
+            if (seen.has(key)) continue
+            seen.add(key)
+            logs.push(log)
+          }
+          scannedTo = hi
+          cursor = hi + 1n
+          // Ease back up after the endpoint stops complaining: a window shrunk
+          // by one busy stretch of chain should not punish the whole scan.
+          goodRuns += 1
+          const growTo = refusedAt === undefined ? ceiling : refusedAt / 2n
+          if (goodRuns >= 4 && learnedWindow !== undefined && learnedWindow < growTo) {
+            const doubled = learnedWindow * 2n
+            learnedWindow = doubled > growTo ? growTo : doubled
+            goodRuns = 0
+          }
+        } catch (e) {
+          const err = e as ChainError
+          // A refusal of the WINDOW (range cap, response too large) is the
+          // provider telling us its real limit. Halve and retry the same start.
+          // At one block wide there is nothing left to narrow, so it is a real
+          // error about a real request and the caller must see it.
+          const current = learnedWindow ?? ceiling
+          if (err.category === 'UPSTREAM_POLICY' && current > 1n) {
+            refusedAt = refusedAt === undefined || current < refusedAt ? current : refusedAt
+            learnedWindow = current / 2n > 0n ? current / 2n : 1n
+            goodRuns = 0
+            continue
+          }
+          throw err
+        }
+      }
+      logs.sort((a, b) =>
+        a.blockNumber === b.blockNumber
+          ? a.logIndex - b.logIndex
+          : a.blockNumber < b.blockNumber
+            ? -1
+            : 1,
+      )
+      return { logs, scannedTo, windowUsed: learnedWindow ?? ceiling }
+    }
+
+    return ResultAsync.fromPromise(walk(), (e) => e as ChainError)
+  }
+
   /** Walk an error's cause chain for revert return data (viem nests provider errors). */
   const revertDataOf = (e: unknown): `0x${string}` | null => {
     let cur: unknown = e
@@ -562,49 +657,53 @@ export function createViemReader(cfg: {
     })
   }
 
-  const analyzeFailure = (tx: TransactionData): ResultAsync<FailureAnalysis, ChainError> =>
-    capabilities().andThen((caps) => {
-      const unavailable: FailureAnalysis = {
-        reason:
-          'failure analysis unavailable: the RPC endpoint answered neither a trace nor a replay',
-        revertData: null,
-        method: 'none',
-        confidence: 'none',
-        note: null,
-      }
-      // No silent fallback: whenever the path taken differs from what the probed
-      // capabilities promised, the note says why (the field-test defect).
-      const replayWithNote = (note: string | null): ResultAsync<FailureAnalysis, ChainError> =>
-        replayFailure(tx)
-          .map((a) => ({ ...a, note: a.note ?? note }))
-          .orElse(() => okAsync({ ...unavailable, note }))
-      if (caps.trace !== true) {
-        return replayWithNote(
-          caps.trace === false
-            ? 'the RPC endpoint has no debug_traceTransaction (probed) — replay is the best available method'
-            : 'trace support unknown (probe inconclusive) — replay used',
-        )
-      }
-      // A load-balanced endpoint answers trace from whichever node it picks, and
-      // not all of them carry debug_. Retrying once in-process makes `confidence`
-      // stable across identical calls instead of flapping exact/approximate, and
-      // spares the caller a retry the note used to ask them to make themselves.
-      const traceOnce = (): ResultAsync<FailureAnalysis | null, ChainError> => traceFailure(tx)
-      return traceOnce()
-        .orElse((e) => (e.retryable ? traceOnce() : errAsync(e)))
-        .andThen((fromTrace) =>
-          fromTrace !== null
-            ? okAsync(fromTrace)
-            : replayWithNote(
-                'trace answered but reported no failing frame for this transaction — replay used',
-              ),
-        )
-        .orElse((e) =>
-          replayWithNote(
-            `trace attempted twice and failed (${e.category}: ${e.message}) — replay used; the endpoint served this call from a node without debug_traceTransaction`,
-          ),
-        )
-    })
+  /**
+   * Why a trace failure must not be reported as a missing capability.
+   *
+   * The endpoint saying "method not found" is the node telling us, about this
+   * call, that it does not serve debug_traceTransaction — that we can repeat.
+   * Anything else (a quota block, a timeout, an overloaded node) tells us
+   * nothing about the method, and the old note asserted it anyway: it claimed
+   * "the endpoint served this call from a node without debug_traceTransaction"
+   * for what was really a billing refusal. Unknown reasons stay unknown.
+   */
+  const traceUnavailableNote = (e: ChainError): string =>
+    e.category === 'UNSUPPORTED'
+      ? `the RPC endpoint answered that it does not offer debug_traceTransaction (${e.message}) — replay is the best available method here`
+      : `trace was unavailable (${e.category}: ${e.message}) — replay used. This is not a statement about whether the endpoint supports debug_traceTransaction; the trace call failed for a reason unrelated to the method itself, so a later call may well trace fine`
+
+  const analyzeFailure = (tx: TransactionData): ResultAsync<FailureAnalysis, ChainError> => {
+    const unavailable: FailureAnalysis = {
+      reason:
+        'failure analysis unavailable: the RPC endpoint answered neither a trace nor a replay',
+      revertData: null,
+      method: 'none',
+      confidence: 'none',
+      note: null,
+    }
+    // No silent fallback: whenever replay stands in for trace, the note says why.
+    const replayWithNote = (note: string | null): ResultAsync<FailureAnalysis, ChainError> =>
+      replayFailure(tx)
+        .map((a) => ({ ...a, note: a.note ?? note }))
+        .orElse(() => okAsync({ ...unavailable, note }))
+
+    // Always attempt the trace. There is no probe to ask first — the attempt IS
+    // the probe, and unlike a cached guess it is about the transaction actually
+    // being analyzed. A load-balanced endpoint answers from whichever node it
+    // picks and not all of them carry debug_, so retrying once in-process keeps
+    // `confidence` stable across identical calls instead of flapping.
+    const traceOnce = (): ResultAsync<FailureAnalysis | null, ChainError> => traceFailure(tx)
+    return traceOnce()
+      .orElse((e) => (e.retryable ? traceOnce() : errAsync(e)))
+      .andThen((fromTrace) =>
+        fromTrace !== null
+          ? okAsync(fromTrace)
+          : replayWithNote(
+              'trace answered but reported no failing frame for this transaction — replay used',
+            ),
+      )
+      .orElse((e) => replayWithNote(traceUnavailableNote(e)))
+  }
 
   /** Via the Universal Resolver, so ENSIP-10 wildcards and CCIP-read work. */
   const ensUnavailable = <T>(): ResultAsync<T, ChainError> =>
@@ -698,6 +797,7 @@ export function createViemReader(cfg: {
     supportsInterface,
     tokenBalance,
     getLogs,
+    scanLogs,
     transaction,
     transactionRaw,
     analyzeFailure,

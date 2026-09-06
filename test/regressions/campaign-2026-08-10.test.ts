@@ -175,18 +175,46 @@ describe('campaign bug 5: transient upstream failures must not be labelled deter
     expect(mapped.retryable).toBe(true)
   })
 
-  it('still calls an exhausted quota deterministic, because retrying really does not help', () => {
+  /**
+   * REVISED 2026-09-06. This case used to assert UPSTREAM_POLICY, under the rule
+   * "retrying an exhausted quota really does not help". The message below is the
+   * VERBATIM reply from arbitrum.drpc.org — not the trimmed version this suite
+   * used to carry — and the identical call succeeded minutes later. The rule was
+   * wrong about this message: the allowance is a bucket, and buckets refill.
+   *
+   * What the old rule protected is still protected. It existed to stop a retry
+   * spiral, and a spiral is retrying *immediately*, forever. The answer to that
+   * is a wait, not a refusal: transient PLUS retry_after_ms.
+   */
+  it('an exhausted usage allowance is transient, and carries a wait so it cannot spiral', () => {
     const mapped = mapViemError(
       new RpcRequestError({
         body: {},
         url: 'https://rpc.test',
         error: {
           code: -32001,
-          message: "You've reached the usage limit for your current plan. Please upgrade",
+          message:
+            "You've reached the usage limit for your current plan. To continue with higher limits and uninterrupted access, please upgrade here: https://www.1rpc.io/#pricing",
         },
       }),
     )
-    expect(mapped.category).toBe('UPSTREAM_POLICY')
+    expect(mapped.category).toBe('UPSTREAM_TRANSIENT')
+    expect(mapped.retryable).toBe(true)
+    // the anti-spiral guarantee: never a bare "retry", always "wait this long"
+    expect(mapped.retryAfterMs ?? 0).toBeGreaterThan(0)
+    expect(mapped.hint).not.toContain('will fail again')
+    // and it must not send the agent rewriting a request that was never the problem
+    expect(mapped.hint).toContain('Do NOT rewrite or narrow the request')
+  })
+
+  it('a plan that does not include the method IS deterministic — no wait can add it', () => {
+    const mapped = mapViemError(
+      new RpcRequestError({
+        body: {},
+        url: 'https://rpc.test',
+        error: { code: -32004, message: 'debug_traceTransaction is not available on your plan' },
+      }),
+    )
     expect(mapped.retryable).toBe(false)
   })
 

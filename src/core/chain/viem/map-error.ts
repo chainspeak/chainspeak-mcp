@@ -12,6 +12,7 @@ import {
 import {
   type ChainError,
   contractCallFailed,
+  historicalStateUnavailable,
   internal,
   unsupported,
   upstreamPolicy,
@@ -25,7 +26,6 @@ import {
  * wasted seconds. The converse is just as bad: telling a caller not to retry a
  * timeout that succeeds on retry.
  */
-/** A free-tier TIMEOUT is transient; a free-tier QUOTA is not. */
 const TRANSIENT_TEXT =
   /timeout|timed out|rate.?limit|too many|throttl|overloaded|capacity|temporar|try again|\bretry\b|busy|upstream error|no healthy|bad gateway/i
 
@@ -33,11 +33,41 @@ const TRANSIENT_TEXT =
 const TOO_LARGE_TEXT =
   /(response|body|payload|result)[^.]{0,24}(too large|size limit|exceeded)|too many (results|logs|matches|records)|query returned more than|result set too large/i
 
-/** Quota exhausted or plan-gated: retrying the same request changes nothing. */
-const QUOTA_TEXT = /usage limit|quota|credits|upgrade|exceeded your|daily limit|monthly/i
+/**
+ * A capability the plan does not include — tracing, archive, an entire method.
+ * No amount of waiting adds it, so this really is UPSTREAM_POLICY: change the
+ * request or change the endpoint.
+ */
+const PLAN_GATED_TEXT =
+  /not (available|included|supported|enabled)[^.]{0,30}\b(plan|tier|subscription)\b|requires? (a |an )?(paid|higher|pro|premium|upgraded)\s*(plan|tier|subscription)|\b(plan|tier|subscription)\b[^.]{0,30}does not (include|support)/i
 
+/**
+ * A spent budget that refills — usage allowance, credits, a daily cap.
+ *
+ * This used to live in the same regex as the plan gate above, under the rule "a
+ * free-tier TIMEOUT is transient; a free-tier QUOTA is not". Field-disproved on
+ * 2026-09-06: arbitrum.drpc.org refused with "You've reached the usage limit for
+ * your current plan … please upgrade", and the identical call succeeded minutes
+ * later. The allowance is a bucket, and buckets refill.
+ *
+ * The old rule was still protecting something real — retrying instantly, in a
+ * spiral, cannot help. That is why this maps to UPSTREAM_TRANSIENT *with*
+ * `retry_after_ms`: the agent waits rather than spins, and both conclusions hold.
+ *
+ * Note what is deliberately NOT here: "upgrade". Billing wording says nothing
+ * about determinism. It appeared verbatim in both a refilling usage limit and a
+ * plain "Request timeout on the free plan, please upgrade to paid plan" — and
+ * while it sat in this pattern it made that literal timeout non-retryable.
+ */
+const USAGE_LIMIT_TEXT =
+  /usage limit|\bquota\b|\bcredits?\b|exceeded your|daily limit|monthly limit|out of (units|credits|requests)/i
+
+/** How long to wait on a refilling allowance when the provider suggests nothing. */
+const USAGE_LIMIT_BACKOFF_MS = 60_000
+
+/** Only a genuine plan gate may veto a transient reading — never billing wording. */
 const looksTransient = (text: string): boolean =>
-  TRANSIENT_TEXT.test(text) && !QUOTA_TEXT.test(text)
+  TRANSIENT_TEXT.test(text) && !PLAN_GATED_TEXT.test(text)
 
 /**
  * Every scrap of text an error carries, for CLASSIFICATION ONLY. viem's raw
@@ -82,6 +112,32 @@ export function mapViemError(e: unknown): ChainError {
       'the request matched more data than the endpoint will return in one response — narrow it (a smaller block range is usually the fix, and a busy contract can emit thousands of logs per block) and page through; retrying it unchanged will fail again',
     )
   }
+  // A spent allowance, checked before the general transient rule so it carries a
+  // wait. NOT before the plan gate: a plan that never included the method is a
+  // different thing, and falls through to the deterministic branches below
+  // (method-not-found stays UNSUPPORTED, which is what the trace fallback reads).
+  if (
+    USAGE_LIMIT_TEXT.test(text) &&
+    !PLAN_GATED_TEXT.test(text) &&
+    !TOO_LARGE_TEXT.test(text) &&
+    !isArchiveGap(text) &&
+    !/revert|execution reverted/i.test(text)
+  ) {
+    const carrier = findError(e, BaseError)
+    const withHeaders = findError(e, HttpRequestError)
+    return upstreamTransient(
+      firstLine(
+        carrier === undefined
+          ? "the RPC provider refused the request on its usage allowance, not on the request's contents"
+          : providerMessageOf(
+              carrier,
+              "the RPC provider refused the request on its usage allowance, not on the request's contents",
+            ),
+      ),
+      'the endpoint refused this on a usage allowance that refills, so the identical call works again once it does — wait retry_after_ms rather than retrying immediately. Do NOT rewrite or narrow the request: nothing about its shape caused this. If it keeps happening, the allowance is too small for the work — use a paid or different RPC endpoint.',
+      parseRetryAfter(withHeaders?.headers) ?? USAGE_LIMIT_BACKOFF_MS,
+    )
+  }
   if (looksTransient(text) && !isArchiveGap(text) && !/revert|execution reverted/i.test(text)) {
     const carrier = findError(e, BaseError)
     return upstreamTransient(
@@ -111,7 +167,7 @@ export function mapViemError(e: unknown): ChainError {
       // a node that does. Only call a 4xx deterministic when it really is.
       const retryable =
         http.status === 408 ||
-        (http.status === 403 && !QUOTA_TEXT.test(text)) ||
+        (http.status === 403 && !PLAN_GATED_TEXT.test(text)) ||
         looksTransient(text)
       if (retryable) {
         return upstreamTransient(
@@ -198,9 +254,9 @@ const isArchiveGap = (text: string): boolean =>
   )
 
 const archiveGap = (e: BaseError): ChainError =>
-  unsupported(
-    providerMessageOf(e, 'historical state is not available on this RPC endpoint'),
-    'the configured RPC is not an archive node, so state at this historical block is unavailable — query a recent block, or configure an archive-capable ETH_RPC_URL (e.g. drpc)',
+  historicalStateUnavailable(
+    providerMessageOf(e, 'the RPC endpoint could not serve state at this historical block'),
+    'the node does not hold state this far back. Try a block closer to the head first — most failures here are a read a few hundred thousand blocks too deep, not an endpoint with no history at all. If that block is the point of the question, use an archive-capable RPC (e.g. drpc). Some chains cannot serve their earliest blocks from any node: an Arbitrum Nitro archive node has no pre-migration state.',
   )
 
 type Ctor<T> = abstract new (...args: never[]) => T

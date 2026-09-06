@@ -104,7 +104,7 @@ describe('chainspeak_get_events', () => {
     expect(topic0).toContain(APPROVAL)
   })
 
-  it('rejects a range wider than 10000 blocks with a steering hint', async () => {
+  it('accepts a range far wider than the old 10000-block cap instead of refusing it', async () => {
     const fake = createFakeReader({
       pinBlock: (at) =>
         okAsync({ number: at === 'latest' ? 19100000n : (at as bigint), timestamp: 1n }),
@@ -113,10 +113,10 @@ describe('chainspeak_get_events', () => {
 
     const result = await eventsHandler(args, testCtx(fake))
 
-    expect(result.isErr()).toBe(true)
-    const e = result._unsafeUnwrapErr()
-    expect(e.category).toBe('INVALID_INPUT')
-    expect(e.hint).toContain('10000')
+    // 100,000 blocks: the old code refused this outright and told the caller to
+    // page it themselves. Server-side windowing is the whole point of the fix.
+    expect(result.isOk()).toBe(true)
+    expect(result._unsafeUnwrap().to_block).toBe('19100000')
   })
 
   it('rejects raw kind without any filter (would scan every event on the chain)', async () => {
@@ -172,16 +172,39 @@ describe('chainspeak_get_events', () => {
 
     const out = result._unsafeUnwrap()
     expect(out.events).toHaveLength(50)
-    expect(out.pagination).toMatchObject({
-      has_more: true,
-      offset: 0,
-      next_cursor: '50',
-    })
-    expect(out.pagination.message).toContain('showing events 1-50')
+    expect(out.pagination.has_more).toBe(true)
+    // the cursor is anchored to the last event returned, not to an offset —
+    // that is what lets a page be answered without scanning the whole range
+    expect(out.pagination.next_cursor).toBe('19000049:49')
+    expect(out.pagination.message).toContain('cursor')
 
-    const page2 = await eventsHandler(parse({ ...rawArgs, cursor: '100' }), testCtx(fake))
-    expect(page2._unsafeUnwrap().events).toHaveLength(20)
-    expect(page2._unsafeUnwrap().pagination.next_cursor).toBeNull()
+    const page2 = await eventsHandler(
+      parse({ ...rawArgs, cursor: out.pagination.next_cursor as string }),
+      testCtx(fake),
+    )
+    const p2 = page2._unsafeUnwrap()
+    expect(p2.events).toHaveLength(50)
+    expect(p2.events[0]?.block_number).toBe('19000050')
+
+    const page3 = await eventsHandler(
+      parse({ ...rawArgs, cursor: p2.pagination.next_cursor as string }),
+      testCtx(fake),
+    )
+    const p3 = page3._unsafeUnwrap()
+    expect(p3.events).toHaveLength(20)
+    expect(p3.pagination.has_more).toBe(false)
+    expect(p3.pagination.next_cursor).toBeNull()
+  })
+
+  it('refuses a cursor it did not issue rather than silently restarting the range', async () => {
+    const fake = createFakeReader({ getLogs: () => okAsync([]) })
+    const result = await eventsHandler(
+      parse({ kind: 'raw', emitted_by: USDC, from_block: '19000000', cursor: 'not-a-cursor' }),
+      testCtx(fake),
+    )
+
+    expect(result.isErr()).toBe(true)
+    expect(result._unsafeUnwrapErr().category).toBe('INVALID_INPUT')
   })
 
   it('sorts merged results by block then log index', async () => {

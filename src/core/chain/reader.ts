@@ -10,6 +10,7 @@ import type {
   GasOutlook,
   Hash,
   LogFilter,
+  LogScan,
   NameResolution,
   PinnedBlock,
   RangeLog,
@@ -57,6 +58,19 @@ export interface ChainReader {
   ): ResultAsync<boolean, ChainError>
   tokenBalance(token: Address, holder: Address, atBlock: bigint): ResultAsync<bigint, ChainError>
   getLogs(filter: LogFilter): ResultAsync<RangeLog[], ChainError>
+  /**
+   * Walk [fromBlock, toBlock] in windows, merging every filter's logs, and stop
+   * as soon as `stopAfter` logs are in hand.
+   *
+   * The caller states the range it actually wants. This adapts to what the
+   * provider really accepts — shrinking the window when the endpoint refuses one
+   * and easing back up when it stops refusing — instead of enforcing a number
+   * the provider never agreed to. `windowHint` seeds the first attempt only.
+   */
+  scanLogs(
+    filters: readonly LogFilter[],
+    opts: { stopAfter: number; windowHint: bigint },
+  ): ResultAsync<LogScan, ChainError>
   transaction(hash: Hash): ResultAsync<TransactionData | null, ChainError>
   /**
    * Why a FAILED transaction reverted. Ladder: debug_traceTransaction when the
