@@ -1,0 +1,41 @@
+test/chain/failure-ladder.test.ts
+  s_fa165c4a79e1e8::t_bb830936759ff5 13-14
+  s_fa165c4a79e1e8::t_326b3320bb86d4 116
+  s_fa165c4a79e1e8::t_5b9eaf9b1b1ab5 46-55
+  s_fa165c4a79e1e8::t_86b1eb53426096 129,142-161
+src/core/tools/get-chain-status.ts
+  s_fa165c4a79e1e8::t_c32f48cdfa9395 145
+  s_fa165c4a79e1e8::t_4445a6d0771779 183
+test/regressions/archive-probe-removed.test.ts
+  s_fa165c4a79e1e8::t_57f3ce52b27e2b 65-66,70,72,75,79-82,84-85
+src/core/chain/probe.ts
+  s_fa165c4a79e1e8::t_d26461a4dac330 2,4-6,8-27
+  s_fa165c4a79e1e8::t_ecb1a9b381f0b2 93-95
+src/core/chain/viem/client.ts
+  s_fa165c4a79e1e8::t_98a132f7d2a88a 565-610
+  s_fa165c4a79e1e8::t_7829703e385f9e 611
+README.md
+  s_fa165c4a79e1e8::t_a88f89e1d585a7 7,21-28
+test/chain/probe.test.ts
+  s_fa165c4a79e1e8::t_f61be15ace7bca 54-56,59-61,65,72
+test/fakes/chain-reader.ts
+  s_fa165c4a79e1e8::t_41abb96da709d8 15
+test/tools/get-chain-status.test.ts
+  s_fa165c4a79e1e8::t_f792a2bd659fc3 26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "f52aabcc9f8be8212cd4fa872eb95220e2edc40e",
+  "prompts": {},
+  "sessions": {
+    "s_fa165c4a79e1e8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8503bfc2-e55a-40dd-94b1-2371b9e7c476",
+        "model": "claude-opus-5"
+      },
+      "human_author": "binarch <binarchdev@gmail.com>"
+    }
+  }
+}
