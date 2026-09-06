@@ -84,13 +84,18 @@ describe('mapViemError', () => {
     expect(mapped.retryable).toBe(false)
   })
 
-  it('missing trie node (pruned state) → UNSUPPORTED with an archive-node hint', () => {
+  it('missing trie node (pruned state) → HISTORICAL_STATE_UNAVAILABLE, steering on distance first', () => {
     const e = new RpcError(new Error('missing trie node abc123'), {
       code: -32000,
       shortMessage: 'missing trie node abc123',
     })
     const mapped = mapViemError(e)
-    expect(mapped.category).toBe('UNSUPPORTED')
+    // Its own category: this is where a history limit is learned now that the
+    // archive probe is gone, so it must not be lumped in with UNSUPPORTED.
+    expect(mapped.category).toBe('HISTORICAL_STATE_UNAVAILABLE')
+    expect(mapped.retryable).toBe(false)
+    // Both ways out, nearer block before "go buy an archive node".
+    expect(mapped.hint).toContain('closer to the head')
     expect(mapped.hint).toContain('archive')
   })
 

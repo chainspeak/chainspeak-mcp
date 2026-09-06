@@ -12,6 +12,7 @@ import {
 import {
   type ChainError,
   contractCallFailed,
+  historicalStateUnavailable,
   internal,
   unsupported,
   upstreamPolicy,
@@ -198,9 +199,9 @@ const isArchiveGap = (text: string): boolean =>
   )
 
 const archiveGap = (e: BaseError): ChainError =>
-  unsupported(
-    providerMessageOf(e, 'historical state is not available on this RPC endpoint'),
-    'the configured RPC is not an archive node, so state at this historical block is unavailable — query a recent block, or configure an archive-capable ETH_RPC_URL (e.g. drpc)',
+  historicalStateUnavailable(
+    providerMessageOf(e, 'the RPC endpoint could not serve state at this historical block'),
+    'the node does not hold state this far back. Try a block closer to the head first — most failures here are a read a few hundred thousand blocks too deep, not an endpoint with no history at all. If that block is the point of the question, use an archive-capable RPC (e.g. drpc). Some chains cannot serve their earliest blocks from any node: an Arbitrum Nitro archive node has no pre-migration state.',
   )
 
 type Ctor<T> = abstract new (...args: never[]) => T

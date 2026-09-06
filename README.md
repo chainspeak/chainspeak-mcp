@@ -4,7 +4,7 @@ MCP server that lets LLMs read Ethereum chain data over JSON-RPC. Read-only, no 
 
 Tools — capability clusters, not endpoint wrappers:
 
-- `chainspeak_get_chain_status` — chain id + name, latest block, base fee, gas tiers (slow/standard/fast), "a transfer costs ~X ETH now", blob fee, sync flag, and probed `upstream` capabilities (archive / trace / batch cap)
+- `chainspeak_get_chain_status` — chain id + name, latest block, base fee, gas tiers (slow/standard/fast), "a transfer costs ~X ETH now", blob fee, sync flag, and probed `upstream` capabilities (trace / batch cap)
 - `chainspeak_get_account` — balance, nonce, is_contract, EIP-7702 delegation, verified reverse ENS; takes an address OR an ENS name, resolved at the same block as the read
 - `chainspeak_get_token` — ERC-20 metadata + total supply (no holder needed), optional holder balance, historical `block` support
 - `chainspeak_get_transaction` — status, value, gas_limit + gas_used (+%), fee paid precomputed, confirmations, decoded method + ERC-20/721 transfers; failed txs get `failure: {reason, method, confidence}` via debug trace or honest eth_call replay; `detail: summary|full|raw`
@@ -17,6 +17,12 @@ Conventions every tool follows: responses echo `{chain_id, block_number}`; addre
 > **RPC note:** historical-state queries need an archive-capable endpoint — the publicnode
 > default is NOT archive; https://eth.drpc.org (free) is. drpc's free tier caps JSON-RPC
 > batches at 3, which the server respects automatically.
+>
+> The server does **not** probe for archive support, and `upstream` has no `archive` field.
+> It used to, and the field lied: any error at an old block was read as "not an archive
+> node", so a free-tier quota message came back as `archive: false` from an endpoint whose
+> historical reads worked — cached, so it stayed wrong. Just make the read; if the node
+> cannot serve that block you get `HISTORICAL_STATE_UNAVAILABLE` naming what to change.
 
 ## Requirements
 

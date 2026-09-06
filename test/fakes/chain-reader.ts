@@ -12,7 +12,7 @@ export const VITALIK = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' as Address
 
 export const createFakeReader = (overrides?: Partial<ChainReader>): ChainReader => ({
   chainId: () => okAsync(1n),
-  capabilities: () => okAsync({ archive: true, trace: false, batchCap: 3 }),
+  capabilities: () => okAsync({ trace: false, batchCap: 3 }),
   pinBlock: () => okAsync({ number: 19000000n, timestamp: 1705000000n }),
   block: () =>
     okAsync({

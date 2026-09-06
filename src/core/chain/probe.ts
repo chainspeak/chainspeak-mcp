@@ -1,12 +1,26 @@
 /**
  * Feature-detect the endpoint rather than assume: callers bring their own RPC,
- * and archive state, batch caps and debug_ methods all vary by provider. Every
- * answer degrades to null — a failed probe must never break the server.
+ * and batch caps and debug_ methods vary by provider. Every answer degrades to
+ * null — a failed probe must never break the server.
+ *
+ * **There is deliberately no `archive` probe.** There used to be one, and it
+ * lied. It read ANY JSON-RPC error at an old block as "not an archive node", so
+ * a free-tier quota message ("you've reached the usage limit … please upgrade")
+ * came back as `archive: false` from an endpoint whose archive reads worked
+ * fine — and because the answer was cached, one wrong probe steered entire
+ * sessions around a limit that did not exist. Block 1 was the wrong question
+ * anyway: an Arbitrum Nitro node cannot serve pre-migration state while being a
+ * perfectly good archive node for every block after it.
+ *
+ * The replacement is not a better probe, it is no probe. Treat every endpoint as
+ * archive-capable, attempt the historical read, and let the real failure speak:
+ * a node that genuinely lacks the state says so in words `mapViemError`
+ * recognises, and that becomes HISTORICAL_STATE_UNAVAILABLE with a hint saying
+ * what to do next. An error we do not recognise stays an unknown error — it is
+ * never converted back into a capability claim.
  */
 
 export interface UpstreamCapabilities {
-  /** can this endpoint serve historical state (balance at block 1)? null = probe failed */
-  archive: boolean | null
   /** does this endpoint offer debug_traceTransaction? null = probe failed */
   trace: boolean | null
   /** largest probed JSON-RPC batch size that succeeds (10, 3, or 1); null = probe failed */
@@ -14,7 +28,6 @@ export interface UpstreamCapabilities {
 }
 
 const ZERO_HASH = `0x${'00'.repeat(32)}`
-const PROBE_ADDRESS = '0x0000000000000000000000000000000000000001'
 
 interface RpcResponse {
   result?: unknown
@@ -45,20 +58,6 @@ const call = (method: string, params: unknown[], id = 1): Record<string, unknown
   method,
   params,
 })
-
-/** Old state readable → archive-capable. A JSON-RPC error → pruned/full node. */
-const probeArchive = async (url: string, timeoutMs: number): Promise<boolean | null> => {
-  try {
-    const res = (await post(
-      url,
-      call('eth_getBalance', [PROBE_ADDRESS, '0x1']),
-      timeoutMs,
-    )) as RpcResponse
-    return res.error === undefined && typeof res.result === 'string'
-  } catch {
-    return null
-  }
-}
 
 const METHOD_MISSING =
   /method not (found|supported|available|allowed)|does not exist|not implemented|disabled|unsupported|restricted|no such method/i
@@ -112,10 +111,9 @@ export const probeUpstream = async (
   url: string,
   timeoutMs = 5000,
 ): Promise<UpstreamCapabilities> => {
-  const [archive, trace, batchCap] = await Promise.all([
-    probeArchive(url, timeoutMs),
+  const [trace, batchCap] = await Promise.all([
     probeTrace(url, timeoutMs),
     probeBatchCap(url, timeoutMs),
   ])
-  return { archive, trace, batchCap }
+  return { trace, batchCap }
 }

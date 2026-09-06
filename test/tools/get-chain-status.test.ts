@@ -23,7 +23,7 @@ describe('chainspeak_get_chain_status', () => {
       base_fee_gwei: '20',
       blob_base_fee_wei: '1',
       upstream_syncing: false,
-      upstream: { archive: true, trace: false, batch_cap: 3 },
+      upstream: { trace: false, batch_cap: 3 },
       note: null,
     })
     expect(out.gas_tiers).toHaveLength(3)

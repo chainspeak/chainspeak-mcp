@@ -8,6 +8,7 @@ export type ErrorCategory =
   | 'INVALID_INPUT'
   | 'NOT_FOUND'
   | 'UNSUPPORTED'
+  | 'HISTORICAL_STATE_UNAVAILABLE'
   | 'UPSTREAM_TRANSIENT'
   | 'UPSTREAM_POLICY'
   | 'INTERNAL'
@@ -43,6 +44,25 @@ export const notFound = (message: string, hint: string): ChainError => ({
 
 export const unsupported = (message: string, hint: string): ChainError => ({
   category: 'UNSUPPORTED',
+  retryable: false,
+  message,
+  hint,
+})
+
+/**
+ * The node could not serve state at this historical block — it is pruned, or the
+ * block predates the chain's own migration.
+ *
+ * Its own category on purpose. This is the ONLY honest place to learn that an
+ * endpoint's history is limited: the server no longer probes for archive support
+ * up front, because a probe answers before anyone asked the real question and
+ * caches whatever it guessed. Here the block that actually failed is known, so
+ * the hint can name both ways out. Distance is the first thing to try: most
+ * "archive" failures are a read a few hundred thousand blocks too deep, not an
+ * endpoint that can never serve history.
+ */
+export const historicalStateUnavailable = (message: string, hint: string): ChainError => ({
+  category: 'HISTORICAL_STATE_UNAVAILABLE',
   retryable: false,
   message,
   hint,
