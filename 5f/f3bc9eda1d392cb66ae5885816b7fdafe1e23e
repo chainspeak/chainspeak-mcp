@@ -1,0 +1,19 @@
+package.json
+  s_fa165c4a79e1e8::t_ce487f6682a8b6 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "5ff3bc9eda1d392cb66ae5885816b7fdafe1e23e",
+  "prompts": {},
+  "sessions": {
+    "s_fa165c4a79e1e8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8503bfc2-e55a-40dd-94b1-2371b9e7c476",
+        "model": "claude-opus-5"
+      },
+      "human_author": "binarch <binarchdev@gmail.com>"
+    }
+  }
+}
