@@ -1,0 +1,29 @@
+test/regressions/campaign-2026-08-10.test.ts
+  s_fa165c4a79e1e8::t_949c07fb8c610a 178-189,196-197,201-217
+test/regressions/provider-timeout.test.ts
+  s_fa165c4a79e1e8::t_3f5846442da85a 53-74,77,83-89,92
+  s_fa165c4a79e1e8::t_ae1b1db744b381 90-91,93
+src/core/chain/errors.ts
+  s_fa165c4a79e1e8::t_84276a0828e20e 4-11
+  s_fa165c4a79e1e8::t_0aadcab417aab6 28-32
+src/core/chain/viem/map-error.ts
+  s_fa165c4a79e1e8::t_eaef1e29da024d 170
+  s_fa165c4a79e1e8::t_b5adb2cc8a3e82 36-42,44-68,70
+  s_fa165c4a79e1e8::t_3ef4100b6d714b 115-140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "3a65bcaa2a59cdd3ef89e038d5c03162a7306271",
+  "prompts": {},
+  "sessions": {
+    "s_fa165c4a79e1e8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8503bfc2-e55a-40dd-94b1-2371b9e7c476",
+        "model": "claude-opus-5"
+      },
+      "human_author": "binarch <binarchdev@gmail.com>"
+    }
+  }
+}
