@@ -4,7 +4,7 @@ MCP server that lets LLMs read Ethereum chain data over JSON-RPC. Read-only, no 
 
 Tools — capability clusters, not endpoint wrappers:
 
-- `chainspeak_get_chain_status` — chain id + name, latest block, base fee, gas tiers (slow/standard/fast), "a transfer costs ~X ETH now", blob fee, sync flag, and probed `upstream` capabilities (trace / batch cap)
+- `chainspeak_get_chain_status` — chain id + name, latest block, base fee, gas tiers (slow/standard/fast), "a transfer costs ~X ETH now", blob fee, sync flag, and the measured `upstream` batch cap
 - `chainspeak_get_account` — balance, nonce, is_contract, EIP-7702 delegation, verified reverse ENS; takes an address OR an ENS name, resolved at the same block as the read
 - `chainspeak_get_token` — ERC-20 metadata + total supply (no holder needed), optional holder balance, historical `block` support
 - `chainspeak_get_transaction` — status, value, gas_limit + gas_used (+%), fee paid precomputed, confirmations, decoded method + ERC-20/721 transfers; failed txs get `failure: {reason, method, confidence}` via debug trace or honest eth_call replay; `detail: summary|full|raw`
@@ -18,11 +18,14 @@ Conventions every tool follows: responses echo `{chain_id, block_number}`; addre
 > default is NOT archive; https://eth.drpc.org (free) is. drpc's free tier caps JSON-RPC
 > batches at 3, which the server respects automatically.
 >
-> The server does **not** probe for archive support, and `upstream` has no `archive` field.
-> It used to, and the field lied: any error at an old block was read as "not an archive
-> node", so a free-tier quota message came back as `archive: false` from an endpoint whose
-> historical reads worked — cached, so it stayed wrong. Just make the read; if the node
-> cannot serve that block you get `HISTORICAL_STATE_UNAVAILABLE` naming what to change.
+> The server does **not** probe for archive or trace support, and `upstream` has no
+> `archive` or `trace` field. Both existed and both lied — each asked a capability question
+> up front and read whatever error came back as the answer. On a free-tier quota message
+> the archive probe failed closed (`archive: false` from an endpoint whose historical reads
+> worked) and the trace probe failed open (claiming `debug_traceTransaction` support that
+> was never demonstrated) — and the answers were cached, so they stayed wrong. Just make
+> the call: pruned state comes back as `HISTORICAL_STATE_UNAVAILABLE` naming what to change,
+> and `get_transaction` falls back to `eth_call` replay with the reason in `failure.note`.
 
 ## Requirements
 

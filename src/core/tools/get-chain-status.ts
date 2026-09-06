@@ -44,7 +44,6 @@ const output = z.object({
   l1_data_fee_wei: z.string().nullable(),
   upstream_syncing: z.boolean(),
   upstream: z.object({
-    trace: z.boolean().nullable(),
     batch_cap: z.number().nullable(),
   }),
   note: z.string().nullable(),
@@ -143,7 +142,7 @@ export const chainStatusHandler = (
             block_timestamp_iso: new Date(Number(b.timestamp) * 1000).toISOString(),
             base_fee_wei: b.baseFeePerGasWei === null ? null : b.baseFeePerGasWei.toString(),
             base_fee_gwei: b.baseFeePerGasWei === null ? null : weiToGwei(b.baseFeePerGasWei),
-            upstream: { trace: caps.trace, batch_cap: caps.batchCap },
+            upstream: { batch_cap: caps.batchCap },
           }
           if (historical) {
             return okAsync({
@@ -181,7 +180,7 @@ export const chainStatusHandler = (
 export const getChainStatus = defineTool({
   name: 'chainspeak_get_chain_status',
   description:
-    'Where the chain is right now, in one call: chain id + human chain_name (identifies which network the RPC endpoint serves), the latest block (number echoed in block_number, timestamp as unix string and ISO), the base fee, priority-fee tiers (slow/standard/fast, averaged from recent fee history) each with the resulting total price per gas, a precomputed simple_transfer_cost ("a plain ETH transfer costs ~X ETH right now" at the standard tier, 21000 gas), the blob base fee, and upstream_syncing flagging a lagging node. Call this first when unsure which chain you are on, or when the question is what gas costs now. upstream reports what the configured RPC endpoint can do, probed once and cached: trace (debug_traceTransaction — decides how transaction failure analysis works) and batch_cap (JSON-RPC batch limit); null means the probe could not tell. There is deliberately no archive field: assume historical state IS available and simply make the read you want. If the node cannot serve that block the read fails with HISTORICAL_STATE_UNAVAILABLE, naming the block and what to change — a real answer about the request you actually made. Do not plan around a history limit before you have hit one. Wraps eth_chainId, eth_getBlockByNumber, eth_feeHistory, eth_blobBaseFee, and eth_syncing. All fees are decimal strings in wei plus a gwei or ether convenience form; base-fee-derived fields are null on pre-EIP-1559 chains. An optional historical block returns that block\'s base fee with the current-only fields null (announced in note).',
+    'Where the chain is right now, in one call: chain id + human chain_name (identifies which network the RPC endpoint serves), the latest block (number echoed in block_number, timestamp as unix string and ISO), the base fee, priority-fee tiers (slow/standard/fast, averaged from recent fee history) each with the resulting total price per gas, a precomputed simple_transfer_cost ("a plain ETH transfer costs ~X ETH right now" at the standard tier, 21000 gas), the blob base fee, and upstream_syncing flagging a lagging node. Call this first when unsure which chain you are on, or when the question is what gas costs now. upstream reports the one thing this server measures instead of guessing: batch_cap, the JSON-RPC batch limit, found by actually sending batches until one is accepted; null means the probe could not tell. There are deliberately no archive or trace fields. Both existed, and both lied — they asked a capability question up front and read whatever error came back as the answer, so a provider quota message ("please upgrade") was reported once as "this endpoint has no archive state" and once as "this endpoint supports debug_traceTransaction". Assume historical state and tracing ARE available and simply make the call you want. If the node cannot serve it you get a real error about the request you actually made: HISTORICAL_STATE_UNAVAILABLE for pruned state, and get_transaction falls back to eth_call replay and says why in failure.note. Do not plan around a capability limit before you have hit one. Wraps eth_chainId, eth_getBlockByNumber, eth_feeHistory, eth_blobBaseFee, and eth_syncing. All fees are decimal strings in wei plus a gwei or ether convenience form; base-fee-derived fields are null on pre-EIP-1559 chains. An optional historical block returns that block\'s base fee with the current-only fields null (announced in note).',
   input,
   output,
   idempotent: false,

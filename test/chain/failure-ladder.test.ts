@@ -10,8 +10,8 @@ const REAL_HASH = `0x${'ab'.repeat(32)}` as Hash
 const NOPE_DATA = `0x08c379a0${'20'.padStart(64, '0')}${'4'.padStart(64, '0')}${'6e6f7065'.padEnd(64, '0')}`
 
 interface Behavior {
-  /** what the REAL trace call answers (the probe's zero-hash trace always gets tx-not-found) */
-  realTrace: 'works' | 'fails'
+  /** what the trace call answers. There is no probe any more — this IS the call. */
+  realTrace: 'works' | 'fails' | 'method-not-found'
 }
 
 let server: Server | undefined
@@ -41,6 +41,16 @@ const serve = (behavior: Behavior): Promise<string> => {
               jsonrpc: '2.0',
               id: r.id,
               result: { type: 'CALL', error: 'execution reverted', output: NOPE_DATA },
+            }
+          }
+          if (behavior.realTrace === 'method-not-found') {
+            return {
+              jsonrpc: '2.0',
+              id: r.id,
+              error: {
+                code: -32601,
+                message: 'the method debug_traceTransaction does not exist/is not available',
+              },
             }
           }
           return {
@@ -103,7 +113,7 @@ const failedTx: TransactionData = {
   logs: [],
 }
 
-describe('failure-analysis ladder (integration, probed trace available)', () => {
+describe('failure-analysis ladder (integration; trace is attempted, never probed)', () => {
   it('uses trace when the real trace call answers', { timeout: 15000 }, async () => {
     const url = await serve({ realTrace: 'works' })
     const reader = createViemReader({ url, timeoutMs: 3000 })
@@ -116,7 +126,7 @@ describe('failure-analysis ladder (integration, probed trace available)', () => 
     expect(analysis.note).toBeNull()
   })
 
-  it('falls back to replay WITH a receipt when trace was probed-available but fails at call time', {
+  it('falls back to replay WITH a receipt when the trace call fails', {
     timeout: 15000,
   }, async () => {
     const url = await serve({ realTrace: 'fails' })
@@ -128,9 +138,26 @@ describe('failure-analysis ladder (integration, probed trace available)', () => 
     expect(analysis.confidence).toBe('approximate')
     expect(analysis.reason).toBe('reverted with reason: "nope"')
     // the field-test defect: this must never be a silent fallback
-    // retried in-process before falling back, so `confidence` cannot flap
-    // between identical calls (campaign bug 6)
-    expect(analysis.note).toContain('trace attempted twice and failed')
     expect(analysis.note).toContain('replay used')
+    expect(analysis.note).toContain('trace was unavailable')
+
+    // A transient trace failure says nothing about the method. The old note
+    // asserted "a node without debug_traceTransaction" for what could just as
+    // easily be a quota block — that claim must not come back.
+    expect(analysis.note).not.toContain('without debug_traceTransaction')
+    expect(analysis.note).toContain('not a statement about whether the endpoint supports')
+  })
+
+  it('only claims the method is missing when the node itself said so', {
+    timeout: 15000,
+  }, async () => {
+    const url = await serve({ realTrace: 'method-not-found' })
+    const reader = createViemReader({ url, timeoutMs: 3000 })
+
+    const analysis = (await reader.analyzeFailure(failedTx))._unsafeUnwrap()
+
+    expect(analysis.method).toBe('replay')
+    // -32601 IS the node answering about the method, so this assertion is earned
+    expect(analysis.note).toContain('does not offer debug_traceTransaction')
   })
 })

@@ -62,22 +62,27 @@ afterEach(() => {
   methodsSeen.length = 0
 })
 
-describe('the archive probe is gone, and cannot come back', () => {
-  it('reports no archive capability at all — the field is absent, not false, not null', async () => {
+describe('the capability probes are gone, and cannot come back', () => {
+  it('reports only the measured batch cap — archive and trace absent, not false, not null', async () => {
     const url = await serveQuota()
     const caps = await probeUpstream(url, 2000)
 
-    expect(Object.keys(caps).sort()).toEqual(['batchCap', 'trace'])
+    expect(Object.keys(caps)).toEqual(['batchCap'])
     expect('archive' in caps).toBe(false)
+    expect('trace' in caps).toBe(false)
   })
 
-  it('never asks a historical-state question, so a quota reply cannot be read as a capability', async () => {
+  it('asks no capability question at all, so a quota reply cannot become a capability claim', async () => {
     const url = await serveQuota()
     await probeUpstream(url, 2000)
 
-    // eth_getBalance was the old archive probe. Nothing may ask it up front:
-    // capability is learned from the read the caller actually wanted.
+    // eth_getBalance was the archive probe and failed CLOSED on this error;
+    // debug_traceTransaction was the trace probe and failed OPEN on it. Neither
+    // may be asked up front: capability is learned from the operation the
+    // caller actually wanted.
     expect(methodsSeen).not.toContain('eth_getBalance')
+    expect(methodsSeen).not.toContain('debug_traceTransaction')
+    expect(new Set(methodsSeen)).toEqual(new Set(['eth_chainId']))
   })
 
   it('a genuine pruned-state reply is still a clear, steering answer', () => {

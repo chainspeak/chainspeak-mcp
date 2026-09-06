@@ -562,49 +562,53 @@ export function createViemReader(cfg: {
     })
   }
 
-  const analyzeFailure = (tx: TransactionData): ResultAsync<FailureAnalysis, ChainError> =>
-    capabilities().andThen((caps) => {
-      const unavailable: FailureAnalysis = {
-        reason:
-          'failure analysis unavailable: the RPC endpoint answered neither a trace nor a replay',
-        revertData: null,
-        method: 'none',
-        confidence: 'none',
-        note: null,
-      }
-      // No silent fallback: whenever the path taken differs from what the probed
-      // capabilities promised, the note says why (the field-test defect).
-      const replayWithNote = (note: string | null): ResultAsync<FailureAnalysis, ChainError> =>
-        replayFailure(tx)
-          .map((a) => ({ ...a, note: a.note ?? note }))
-          .orElse(() => okAsync({ ...unavailable, note }))
-      if (caps.trace !== true) {
-        return replayWithNote(
-          caps.trace === false
-            ? 'the RPC endpoint has no debug_traceTransaction (probed) — replay is the best available method'
-            : 'trace support unknown (probe inconclusive) — replay used',
-        )
-      }
-      // A load-balanced endpoint answers trace from whichever node it picks, and
-      // not all of them carry debug_. Retrying once in-process makes `confidence`
-      // stable across identical calls instead of flapping exact/approximate, and
-      // spares the caller a retry the note used to ask them to make themselves.
-      const traceOnce = (): ResultAsync<FailureAnalysis | null, ChainError> => traceFailure(tx)
-      return traceOnce()
-        .orElse((e) => (e.retryable ? traceOnce() : errAsync(e)))
-        .andThen((fromTrace) =>
-          fromTrace !== null
-            ? okAsync(fromTrace)
-            : replayWithNote(
-                'trace answered but reported no failing frame for this transaction — replay used',
-              ),
-        )
-        .orElse((e) =>
-          replayWithNote(
-            `trace attempted twice and failed (${e.category}: ${e.message}) — replay used; the endpoint served this call from a node without debug_traceTransaction`,
-          ),
-        )
-    })
+  /**
+   * Why a trace failure must not be reported as a missing capability.
+   *
+   * The endpoint saying "method not found" is the node telling us, about this
+   * call, that it does not serve debug_traceTransaction — that we can repeat.
+   * Anything else (a quota block, a timeout, an overloaded node) tells us
+   * nothing about the method, and the old note asserted it anyway: it claimed
+   * "the endpoint served this call from a node without debug_traceTransaction"
+   * for what was really a billing refusal. Unknown reasons stay unknown.
+   */
+  const traceUnavailableNote = (e: ChainError): string =>
+    e.category === 'UNSUPPORTED'
+      ? `the RPC endpoint answered that it does not offer debug_traceTransaction (${e.message}) — replay is the best available method here`
+      : `trace was unavailable (${e.category}: ${e.message}) — replay used. This is not a statement about whether the endpoint supports debug_traceTransaction; the trace call failed for a reason unrelated to the method itself, so a later call may well trace fine`
+
+  const analyzeFailure = (tx: TransactionData): ResultAsync<FailureAnalysis, ChainError> => {
+    const unavailable: FailureAnalysis = {
+      reason:
+        'failure analysis unavailable: the RPC endpoint answered neither a trace nor a replay',
+      revertData: null,
+      method: 'none',
+      confidence: 'none',
+      note: null,
+    }
+    // No silent fallback: whenever replay stands in for trace, the note says why.
+    const replayWithNote = (note: string | null): ResultAsync<FailureAnalysis, ChainError> =>
+      replayFailure(tx)
+        .map((a) => ({ ...a, note: a.note ?? note }))
+        .orElse(() => okAsync({ ...unavailable, note }))
+
+    // Always attempt the trace. There is no probe to ask first — the attempt IS
+    // the probe, and unlike a cached guess it is about the transaction actually
+    // being analyzed. A load-balanced endpoint answers from whichever node it
+    // picks and not all of them carry debug_, so retrying once in-process keeps
+    // `confidence` stable across identical calls instead of flapping.
+    const traceOnce = (): ResultAsync<FailureAnalysis | null, ChainError> => traceFailure(tx)
+    return traceOnce()
+      .orElse((e) => (e.retryable ? traceOnce() : errAsync(e)))
+      .andThen((fromTrace) =>
+        fromTrace !== null
+          ? okAsync(fromTrace)
+          : replayWithNote(
+              'trace answered but reported no failing frame for this transaction — replay used',
+            ),
+      )
+      .orElse((e) => replayWithNote(traceUnavailableNote(e)))
+  }
 
   /** Via the Universal Resolver, so ENSIP-10 wildcards and CCIP-read work. */
   const ensUnavailable = <T>(): ResultAsync<T, ChainError> =>
