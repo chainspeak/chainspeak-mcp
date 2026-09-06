@@ -1,4 +1,4 @@
-import { okAsync } from 'neverthrow'
+import { okAsync, ResultAsync } from 'neverthrow'
 import pino from 'pino'
 import { mainnet } from 'viem/chains'
 import type { ChainReader } from '../../src/core/chain/reader'
@@ -10,7 +10,7 @@ export const silentLogger = pino({ level: 'silent' })
 
 export const VITALIK = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' as Address
 
-export const createFakeReader = (overrides?: Partial<ChainReader>): ChainReader => ({
+const defaults = (): Omit<ChainReader, 'scanLogs'> => ({
   chainId: () => okAsync(1n),
   capabilities: () => okAsync({ batchCap: 3 }),
   pinBlock: () => okAsync({ number: 19000000n, timestamp: 1705000000n }),
@@ -84,8 +84,43 @@ export const createFakeReader = (overrides?: Partial<ChainReader>): ChainReader 
       confidence: 'approximate' as const,
       note: null,
     }),
-  ...overrides,
 })
+
+/**
+ * `scanLogs` defaults to walking whatever `getLogs` the test supplied, in one
+ * window, so tests that only stub `getLogs` keep describing the same behaviour.
+ */
+export const createFakeReader = (overrides?: Partial<ChainReader>): ChainReader => {
+  const base = { ...defaults(), ...overrides }
+  return {
+    ...base,
+    scanLogs:
+      overrides?.scanLogs ??
+      ((filters, opts) =>
+        ResultAsync.combine(filters.map((f) => base.getLogs(f))).map((pages) => {
+          const seen = new Set<string>()
+          const logs = []
+          for (const log of pages.flat()) {
+            const key = `${log.blockNumber}-${log.logIndex}`
+            if (seen.has(key)) continue
+            seen.add(key)
+            logs.push(log)
+          }
+          logs.sort((a, b) =>
+            a.blockNumber === b.blockNumber
+              ? a.logIndex - b.logIndex
+              : a.blockNumber < b.blockNumber
+                ? -1
+                : 1,
+          )
+          return {
+            logs,
+            scannedTo: filters[0]?.toBlock ?? 0n,
+            windowUsed: opts.windowHint,
+          }
+        })),
+  }
+}
 
 export const testRegistry = (reader: ChainReader = createFakeReader(), chain = mainnet) =>
   createChainRegistry([{ chain, reader }])

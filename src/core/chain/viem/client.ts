@@ -32,6 +32,7 @@ import type {
   GasOutlook,
   Hash,
   LogFilter,
+  LogScan,
   NameResolution,
   PinnedBlock,
   RangeLog,
@@ -475,6 +476,100 @@ export function createViemReader(cfg: {
       }))
     })
 
+  /**
+   * The window this endpoint has actually proved it will accept. Starts at the
+   * caller's hint and is corrected downward by real refusals — the point being
+   * that no hardcoded number is trustworthy. The field test found the gateway
+   * advertising 10,000 blocks while the provider refused 10,000 and accepted
+   * 4,883; the caller could not learn which limit applied until something broke.
+   */
+  let learnedWindow: bigint | undefined
+  let goodRuns = 0
+  /**
+   * The smallest window this endpoint has ever refused. Growth must stay below
+   * it, or the scan oscillates: grow, get refused, halve, grow, get refused —
+   * paying a rejected round trip (and the transport's retries) every few
+   * windows. A refusal is information; forgetting it is what makes a probe-free
+   * design slow instead of adaptive.
+   */
+  let refusedAt: bigint | undefined
+
+  const scanLogs = (
+    filters: readonly LogFilter[],
+    opts: { stopAfter: number; windowHint: bigint },
+  ): ResultAsync<LogScan, ChainError> => {
+    const first = filters[0]
+    if (first === undefined) {
+      return okAsync({ logs: [], scannedTo: 0n, windowUsed: opts.windowHint })
+    }
+    const from = first.fromBlock
+    const to = first.toBlock
+    const ceiling = opts.windowHint > 0n ? opts.windowHint : 1n
+    learnedWindow ??= ceiling
+
+    const fetchWindow = async (f: LogFilter, lo: bigint, hi: bigint): Promise<RangeLog[]> => {
+      const res = await getLogs({ ...f, fromBlock: lo, toBlock: hi })
+      if (res.isErr()) throw res.error
+      return res.value
+    }
+
+    const walk = async (): Promise<LogScan> => {
+      const logs: RangeLog[] = []
+      const seen = new Set<string>()
+      let cursor = from
+      let scannedTo = from - 1n
+
+      while (cursor <= to && logs.length <= opts.stopAfter) {
+        const window = learnedWindow ?? ceiling
+        const hi = cursor + window - 1n > to ? to : cursor + window - 1n
+        try {
+          const pages = await Promise.all(filters.map((f) => fetchWindow(f, cursor, hi)))
+          for (const log of pages.flat()) {
+            const key = `${log.blockNumber}-${log.logIndex}`
+            if (seen.has(key)) continue
+            seen.add(key)
+            logs.push(log)
+          }
+          scannedTo = hi
+          cursor = hi + 1n
+          // Ease back up after the endpoint stops complaining: a window shrunk
+          // by one busy stretch of chain should not punish the whole scan.
+          goodRuns += 1
+          const growTo = refusedAt === undefined ? ceiling : refusedAt / 2n
+          if (goodRuns >= 4 && learnedWindow !== undefined && learnedWindow < growTo) {
+            const doubled = learnedWindow * 2n
+            learnedWindow = doubled > growTo ? growTo : doubled
+            goodRuns = 0
+          }
+        } catch (e) {
+          const err = e as ChainError
+          // A refusal of the WINDOW (range cap, response too large) is the
+          // provider telling us its real limit. Halve and retry the same start.
+          // At one block wide there is nothing left to narrow, so it is a real
+          // error about a real request and the caller must see it.
+          const current = learnedWindow ?? ceiling
+          if (err.category === 'UPSTREAM_POLICY' && current > 1n) {
+            refusedAt = refusedAt === undefined || current < refusedAt ? current : refusedAt
+            learnedWindow = current / 2n > 0n ? current / 2n : 1n
+            goodRuns = 0
+            continue
+          }
+          throw err
+        }
+      }
+      logs.sort((a, b) =>
+        a.blockNumber === b.blockNumber
+          ? a.logIndex - b.logIndex
+          : a.blockNumber < b.blockNumber
+            ? -1
+            : 1,
+      )
+      return { logs, scannedTo, windowUsed: learnedWindow ?? ceiling }
+    }
+
+    return ResultAsync.fromPromise(walk(), (e) => e as ChainError)
+  }
+
   /** Walk an error's cause chain for revert return data (viem nests provider errors). */
   const revertDataOf = (e: unknown): `0x${string}` | null => {
     let cur: unknown = e
@@ -702,6 +797,7 @@ export function createViemReader(cfg: {
     supportsInterface,
     tokenBalance,
     getLogs,
+    scanLogs,
     transaction,
     transactionRaw,
     analyzeFailure,

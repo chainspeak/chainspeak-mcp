@@ -9,7 +9,7 @@ Tools — capability clusters, not endpoint wrappers:
 - `chainspeak_get_token` — ERC-20 metadata + total supply (no holder needed), optional holder balance, historical `block` support
 - `chainspeak_get_transaction` — status, value, gas_limit + gas_used (+%), fee paid precomputed, confirmations, decoded method + ERC-20/721 transfers; failed txs get `failure: {reason, method, confidence}` via debug trace or honest eth_call replay; `detail: summary|full|raw`
 - `chainspeak_get_block` — header, tx count, gas fullness, base fee; `detail` adds tx hashes or full transactions, paginated with steering truncation messages
-- `chainspeak_get_events` — contract event logs by preset (`transfers`/`approvals` for an account or a whole token, `raw` by contract/topics); Transfer/Approval decoded, everything else honestly `decoded: false`; bounded ranges, paginated
+- `chainspeak_get_events` — contract event logs by preset (`transfers`/`approvals` for an account or a whole token, `raw` by contract/topics); Transfer/Approval decoded, everything else honestly `decoded: false`; any range width (walked server-side in windows the provider accepts), paginated
 - `chainspeak_resolve_name` — ENS both directions (name→address, address→name with forward verification), block-pinned, EIP-55 output
 
 Conventions every tool follows: responses echo `{chain_id, block_number}`; addresses are EIP-55 checksummed; chain quantities are decimal strings with human-readable twins; blocks accept decimal, 0x-hex, or tags; errors are `{category, retryable, message, hint}` where the hint says what to change — deterministic provider rejections are never labeled retryable.

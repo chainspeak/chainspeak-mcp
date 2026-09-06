@@ -5,6 +5,13 @@ import type { Chain } from 'viem'
 import { type ChainError, invalidInput } from './errors'
 import type { ChainReader } from './reader'
 
+/**
+ * The FIRST window a log scan tries, not a cap. Nothing refuses a range for
+ * exceeding it: `scanLogs` starts here and corrects downward when the provider
+ * actually refuses, because a hardcoded cap was wrong in both directions —
+ * larger than what drpc would accept, and far smaller than what an L2 question
+ * needs.
+ */
 export const DEFAULT_MAX_LOG_RANGE = 10_000n
 
 /** Properties of the CHAIN. Properties of the ENDPOINT are probed instead — see probe.ts. */
@@ -20,7 +27,7 @@ export interface ChainFeatures {
 export interface ChainEntry {
   chain: Chain
   reader: ChainReader
-  /** provider-dependent getLogs cap; defaults to DEFAULT_MAX_LOG_RANGE */
+  /** first getLogs window to try; adapts downward on refusal. Defaults to DEFAULT_MAX_LOG_RANGE */
   maxLogRange?: bigint
   /** nominal seconds per block, used to describe ranges in time to the agent */
   blockTimeSec?: number

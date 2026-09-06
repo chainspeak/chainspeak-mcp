@@ -1,4 +1,4 @@
-import { errAsync, okAsync, ResultAsync } from 'neverthrow'
+import { errAsync, okAsync, type ResultAsync } from 'neverthrow'
 import { getAddress } from 'viem'
 import * as z from 'zod'
 import { addressTopic, decodeTokenEvent, EVENT_TOPICS } from '../chain/decode'
@@ -42,7 +42,7 @@ const input = z.object({
       'raw power use: positional topic filter as in eth_getLogs (index 0 = event signature hash; null = wildcard at that position)',
     ),
   from_block: BlockRefSchema.describe(
-    'start of the block range (inclusive): tag, decimal, or 0x-hex number — required; ranges are capped per chain (see the error if you exceed it)',
+    'start of the block range (inclusive): tag, decimal, or 0x-hex number — required. Ask for the range you actually care about: there is no cap, and the server walks wide ranges in provider-sized windows for you.',
   ),
   to_block: BlockRefSchema.default('latest').describe(
     'end of the block range (inclusive): tag, decimal, or 0x-hex number; default latest',
@@ -50,9 +50,10 @@ const input = z.object({
   limit: z.int().min(1).max(200).default(50).describe('page size, 1-200; default 50'),
   cursor: z
     .string()
-    .regex(/^\d+$/, 'cursor is the opaque string from a previous response, e.g. "50"')
     .optional()
-    .describe('continuation cursor from the previous page (pagination.next_cursor)'),
+    .describe(
+      'continuation cursor from the previous page (pagination.next_cursor), passed back verbatim. Keep the SAME from_block/to_block when you continue — the cursor carries the position within them.',
+    ),
 })
 
 const eventItem = z.object({
@@ -74,7 +75,10 @@ const eventItem = z.object({
 })
 
 const pagination = z.object({
-  offset: z.number(),
+  /** how far through the requested range the server actually walked */
+  scanned_through: z.string(),
+  /** the window size the provider accepted, in blocks — measured, not assumed */
+  window_blocks: z.string(),
   limit: z.number(),
   returned: z.number(),
   has_more: z.boolean(),
@@ -134,11 +138,18 @@ const toItem = (log: RangeLog): EventItem => {
   }
 }
 
-/** Block counts mean different spans per chain, so say it in time when we can. */
-const spanInTime = (spec: { maxLogRange: bigint; blockTimeSec: number | null }): string => {
-  if (spec.blockTimeSec === null) return ''
-  const hours = (Number(spec.maxLogRange) * spec.blockTimeSec) / 3600
-  return ` (about ${hours < 1 ? `${Math.round(hours * 60)} minutes` : `${hours.toFixed(1)} hours`})`
+/**
+ * A cursor is `<block>:<logIndex>` — resume at that block, skipping logs there
+ * up to and including that index. `-1` means skip nothing, which is how a page
+ * that ran out of scanned blocks without filling up points at the next block.
+ */
+const parseCursor = (
+  cursor: string | undefined,
+): { block: bigint; logIndex: number } | null | 'invalid' => {
+  if (cursor === undefined) return null
+  const m = /^(\d+):(-?\d+)$/.exec(cursor)
+  if (m?.[1] === undefined || m[2] === undefined) return 'invalid'
+  return { block: BigInt(m[1]), logIndex: Number(m[2]) }
 }
 
 const buildFilters = (
@@ -215,16 +226,22 @@ export const eventsHandler = (
               ),
             )
           }
-          const span = toPin.number - fromPin.number + 1n
-          const maxRange = spec.maxLogRange
-          if (span > maxRange) {
+          // No range cap. The old one refused anything over 10,000 blocks — a
+          // number the provider had never agreed to (drpc refused 10,000 and
+          // accepted 4,883) and one that made L2s unusable: 10,000 Arbitrum
+          // blocks is about 42 minutes, so finding a single event in a
+          // four-month window meant roughly 3,400 caller-orchestrated calls.
+          // Ask for the range you want; the walk below adapts to the provider.
+          const resume = parseCursor(args.cursor)
+          if (resume === 'invalid') {
             return errAsync(
               invalidInput(
-                `block range of ${span} blocks exceeds the maximum of ${maxRange} on ${spec.key}`,
-                `narrow the range to at most ${maxRange} blocks${spanInTime(spec)} (e.g. from_block ${toPin.number - maxRange + 1n} to_block ${toPin.number}) and page through ranges`,
+                `cursor ${JSON.stringify(args.cursor)} is not a cursor this server issued`,
+                'pass pagination.next_cursor from the previous response verbatim, or omit cursor to start the range again',
               ),
             )
           }
+          const scanFrom = resume === null ? fromPin.number : resume.block
           const givenAddress = args.kind === 'raw' ? undefined : args.address
           return (
             givenAddress !== undefined
@@ -233,47 +250,56 @@ export const eventsHandler = (
                 )
               : okAsync<Address | null, ChainError>(null)
           ).andThen((address) =>
-            buildFilters(args, address, fromPin.number, toPin.number).andThen((filters) =>
-              ResultAsync.combine(filters.map((f) => r.getLogs(f))).map((results) => {
-                const seen = new Set<string>()
-                const merged: RangeLog[] = []
-                for (const log of results.flat()) {
-                  const key = `${log.blockNumber}-${log.logIndex}`
-                  if (seen.has(key)) continue
-                  seen.add(key)
-                  merged.push(log)
-                }
-                merged.sort((a, b) =>
-                  a.blockNumber === b.blockNumber
-                    ? a.logIndex - b.logIndex
-                    : a.blockNumber < b.blockNumber
-                      ? -1
-                      : 1,
-                )
-                const offset = args.cursor === undefined ? 0 : Number(args.cursor)
-                const slice = merged.slice(offset, offset + args.limit)
-                const nextOffset = offset + args.limit
-                const next = nextOffset < merged.length ? String(nextOffset) : null
-                return {
-                  chain_id: chainId.toString(),
-                  block_number: toPin.number.toString(),
-                  from_block: fromPin.number.toString(),
-                  to_block: toPin.number.toString(),
-                  resolved_address: address === null ? null : getAddress(address),
-                  events: slice.map(toItem),
-                  pagination: {
-                    offset,
-                    limit: args.limit,
-                    returned: slice.length,
-                    has_more: next !== null,
-                    next_cursor: next,
-                    message:
-                      next === null
-                        ? null
-                        : `showing events ${offset + 1}-${offset + slice.length} in blocks ${fromPin.number}-${toPin.number}; pass cursor "${next}" to continue, or narrow the block range`,
-                  },
-                }
-              }),
+            buildFilters(args, address, scanFrom, toPin.number).andThen((filters) =>
+              r
+                .scanLogs(filters, { stopAfter: args.limit, windowHint: spec.maxLogRange })
+                .map((scan) => {
+                  // Drop anything the previous page already returned. Anchoring
+                  // the cursor to (block, logIndex) rather than an offset is what
+                  // lets a page be answered without scanning the whole range.
+                  const fresh =
+                    resume === null
+                      ? scan.logs
+                      : scan.logs.filter(
+                          (l) =>
+                            l.blockNumber > resume.block ||
+                            (l.blockNumber === resume.block && l.logIndex > resume.logIndex),
+                        )
+                  const slice = fresh.slice(0, args.limit)
+                  const last = slice[slice.length - 1]
+                  const moreInScan = fresh.length > slice.length
+                  const rangeLeft = scan.scannedTo < toPin.number
+                  const hasMore = moreInScan || rangeLeft
+                  // Two ways a page ends: full (resume after the last event) or
+                  // out of scanned blocks with room to spare (resume where the
+                  // walk stopped). The second is why an empty page can still
+                  // legitimately say has_more.
+                  const next = !hasMore
+                    ? null
+                    : moreInScan && last !== undefined
+                      ? `${last.blockNumber}:${last.logIndex}`
+                      : `${scan.scannedTo + 1n}:-1`
+                  return {
+                    chain_id: chainId.toString(),
+                    block_number: toPin.number.toString(),
+                    from_block: fromPin.number.toString(),
+                    to_block: toPin.number.toString(),
+                    resolved_address: address === null ? null : getAddress(address),
+                    events: slice.map(toItem),
+                    pagination: {
+                      scanned_through: scan.scannedTo.toString(),
+                      window_blocks: scan.windowUsed.toString(),
+                      limit: args.limit,
+                      returned: slice.length,
+                      has_more: hasMore,
+                      next_cursor: next,
+                      message:
+                        next === null
+                          ? null
+                          : `returned ${slice.length} event(s) from blocks ${scanFrom}-${scan.scannedTo} of the requested ${fromPin.number}-${toPin.number}; pass cursor "${next}" to continue. The range is walked in ${scan.windowUsed}-block windows server-side — you do not need to narrow it yourself.`,
+                    },
+                  }
+                }),
             ),
           )
         }),
@@ -284,7 +310,7 @@ export const eventsHandler = (
 export const getEvents = defineTool({
   name: 'chainspeak_get_events',
   description:
-    'What events matching a filter happened in a block range — contract event logs via eth_getLogs, shaped by presets: kind "transfers" lists ERC-20/721 Transfer events where address (0x or ENS) is the sender or receiver — or, with token set and address omitted, ALL Transfer events of that contract; kind "approvals" works the same for Approval/ApprovalForAll events with address as the owner; kind "raw" takes emitted_by (a contract) and/or a positional topics filter for anything else. Results are a page, not a count: pagination reports has_more and next_cursor rather than a total, because totalling a range means fetching every match in it. Transfer and Approval events are decoded from bundled ABIs; every other event comes back with decoded false plus its raw topic0, topics, and data — visible but not interpreted, since naming arbitrary events requires contract ABIs this server does not fetch. The block range is required and capped at 10000 blocks; results are paginated (limit, default 50; continue with pagination.next_cursor) and truncation is always announced, never silent. Physics note: native ETH transfers are not events and will NOT appear here — only contract-emitted logs do; for one transaction\'s events use chainspeak_get_transaction detail full instead. Every response echoes chain_id, block_number (the resolved to_block), and the resolved range; addresses are EIP-55 checksummed. An empty events list is a normal answer, not an error.',
+    'What events matching a filter happened in a block range — contract event logs via eth_getLogs, shaped by presets: kind "transfers" lists ERC-20/721 Transfer events where address (0x or ENS) is the sender or receiver — or, with token set and address omitted, ALL Transfer events of that contract; kind "approvals" works the same for Approval/ApprovalForAll events with address as the owner; kind "raw" takes emitted_by (a contract) and/or a positional topics filter for anything else. Results are a page, not a count: pagination reports has_more and next_cursor rather than a total, because totalling a range means fetching every match in it. Transfer and Approval events are decoded from bundled ABIs; every other event comes back with decoded false plus its raw topic0, topics, and data — visible but not interpreted, since naming arbitrary events requires contract ABIs this server does not fetch. The block range is required but NOT capped: ask for the range you actually care about (a whole month on an L2 is fine) and the server walks it in windows the provider accepts, adapting when it refuses one, so you never have to guess or discover the limit by failing. Results are paginated (limit, default 50): keep the same from_block/to_block and pass pagination.next_cursor back verbatim. Read pagination.has_more, not the event count — a page can come back short, or even empty, while has_more is true, because the walk stops when the page is full OR when it has scanned far enough; pagination.scanned_through tells you how far it got and window_blocks is the window the provider actually accepted. Truncation is always announced, never silent. Physics note: native ETH transfers are not events and will NOT appear here — only contract-emitted logs do; for one transaction\'s events use chainspeak_get_transaction detail full instead. Every response echoes chain_id, block_number (the resolved to_block), and the resolved range; addresses are EIP-55 checksummed. An empty events list is a normal answer, not an error.',
   input,
   output,
   idempotent: false,
