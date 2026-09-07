@@ -1,0 +1,31 @@
+README.md
+  s_fa165c4a79e1e8::t_adff341cfa6e50 10,30-53
+package.json
+  s_fa165c4a79e1e8::t_76361d5e2ec80f 3
+src/core/chain/reader.ts
+  s_fa165c4a79e1e8::t_3cd202c3700066 79-80
+src/core/chain/types.ts
+  s_fa165c4a79e1e8::t_35a22d418f6cc0 169-185
+src/core/chain/viem/client.ts
+  s_fa165c4a79e1e8::t_b272415fe25d55 608,640-643,693
+src/core/tools/get-transaction.ts
+  s_fa165c4a79e1e8::t_c92ee96259ac29 122-127,407
+test/chain/failure-ladder.test.ts
+  s_fa165c4a79e1e8::t_d493f8ac0f149a 15-16,65-67,141-142,168-186
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "0cda8af6bef9b402d930b6bc811f120e44b33c43",
+  "prompts": {},
+  "sessions": {
+    "s_fa165c4a79e1e8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8503bfc2-e55a-40dd-94b1-2371b9e7c476",
+        "model": "claude-opus-5"
+      },
+      "human_author": "binarch <binarchdev@gmail.com>"
+    }
+  }
+}
