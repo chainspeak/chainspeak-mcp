@@ -7,7 +7,7 @@ Tools — capability clusters, not endpoint wrappers:
 - `chainspeak_get_chain_status` — chain id + name, latest block, base fee, gas tiers (slow/standard/fast), "a transfer costs ~X ETH now", blob fee, sync flag, and the measured `upstream` batch cap
 - `chainspeak_get_account` — balance, nonce, is_contract, EIP-7702 delegation, verified reverse ENS; takes an address OR an ENS name, resolved at the same block as the read
 - `chainspeak_get_token` — ERC-20 metadata + total supply (no holder needed), optional holder balance, historical `block` support
-- `chainspeak_get_transaction` — status, value, gas_limit + gas_used (+%), fee paid precomputed, confirmations, decoded method + ERC-20/721 transfers; failed txs get `failure: {reason, method, confidence}` via debug trace or honest eth_call replay; `detail: summary|full|raw`
+- `chainspeak_get_transaction` — status, value, gas_limit + gas_used (+%), fee paid precomputed, confirmations, decoded method + ERC-20/721 transfers; failed txs get `failure: {reason, method, method_note}` via debug trace or honest eth_call replay; `detail: summary|full|raw`
 - `chainspeak_get_block` — header, tx count, gas fullness, base fee; `detail` adds tx hashes or full transactions, paginated with steering truncation messages
 - `chainspeak_get_events` — contract event logs by preset (`transfers`/`approvals` for an account or a whole token, `raw` by contract/topics); Transfer/Approval decoded, everything else honestly `decoded: false`; any range width (walked server-side in windows the provider accepts), paginated
 - `chainspeak_resolve_name` — ENS both directions (name→address, address→name with forward verification), block-pinned, EIP-55 output
@@ -26,6 +26,30 @@ Conventions every tool follows: responses echo `{chain_id, block_number}`; addre
 > was never demonstrated) — and the answers were cached, so they stayed wrong. Just make
 > the call: pruned state comes back as `HISTORICAL_STATE_UNAVAILABLE` naming what to change,
 > and `get_transaction` falls back to `eth_call` replay with the reason in `failure.note`.
+
+## 0.3.0 — a breaking output change
+
+`failure.confidence` is **removed** from `chainspeak_get_transaction`.
+
+It was one word restating another. `confidence` could only ever agree with
+`method`, so it carried nothing a reader did not already have — and paying for
+it in every failed-transaction payload, in output a model has to read, is a bad
+trade for a label.
+
+What it meant has moved into `method`, which now says how the reason was
+obtained AND how far it can be trusted:
+
+| `method` | what it means |
+|---|---|
+| `trace` | the revert frame from `debug_traceTransaction` — what actually happened, at the time it happened |
+| `replay` | re-run with `eth_call` against **top-of-block** state, not the state this transaction met. It reverted again and this is that revert, which may not be the same one: anything earlier transactions in the block changed is missing |
+| `replay-not-reproduced` | the replay **succeeded**. The failure was state- or order-dependent, so no reason for it can be given at all |
+| `none` | neither method produced anything — the transaction is pending, or the endpoint served neither call |
+
+`replay-not-reproduced` is new, and it is why this is a fold rather than a
+deletion: that case used to be `method: "replay"` with `confidence: "none"`, and
+dropping the field without it would have made "no reason exists" read as
+"here is the reason, approximately". `method_note` is unchanged.
 
 ## Requirements
 

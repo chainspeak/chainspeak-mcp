@@ -119,8 +119,12 @@ const output = z.object({
           }),
         )
         .nullable(),
-      method: z.enum(['trace', 'replay', 'none']),
-      confidence: z.enum(['exact', 'approximate', 'none']),
+      /**
+       * How the reason was obtained, which is also how far it can be trusted —
+       * see the tool description. No companion confidence field: it could only
+       * ever restate this one.
+       */
+      method: z.enum(['trace', 'replay', 'replay-not-reproduced', 'none']),
       method_note: z.string().nullable(),
     })
     .nullable(),
@@ -375,7 +379,6 @@ export const transactionHandler = (
                       revert_data_words:
                         f.revertData === null ? null : splitRevertWords(f.revertData),
                       method: f.method,
-                      confidence: f.confidence,
                       method_note: f.note,
                     },
                   }),
@@ -401,7 +404,7 @@ export const transactionHandler = (
 export const getTransaction = defineTool({
   name: 'chainspeak_get_transaction',
   description:
-    'Everything about a transaction by hash: status (success|failed|pending), from, to (null for contract creation, with created_contract carrying the deployed address), transferred value in wei and ether, nonce, tx_type, gas_limit AND gas_used with gas_used_percent (out-of-gas shows near 100% on a failed tx), effective gas price in wei and gwei, the EIP-1559 fee caps, the total fee_paid precomputed in wei and ether, the block it was included in plus confirmations, and the number of logs it emitted. method decodes the calldata selector against a small bundled set of common ERC-20/721 functions (name null = outside the set, method null = plain value transfer). token_transfers decodes ERC-20/721 Transfer and Approval events from bundled ABIs — other events are skipped, not errors. A FAILED transaction additionally carries failure: {reason, revert_data, method, confidence, method_note} explaining why it reverted — method "trace" (confidence exact) uses debug_traceTransaction when the RPC endpoint offers it, method "replay" (confidence approximate) re-runs the call against top-of-block state, so order-dependent failures may honestly report "could not reproduce" (confidence none); method_note is non-null whenever a better method was expected but unavailable at call time (e.g. trace probed available but the trace call failed — retrying may reach it); standard Error(string) and Panic reasons are decoded, custom errors come back as raw selector + data, with revert_data_words splitting the arguments into 32-byte words read as uint256 (and as an address where the word is one) so amounts are legible without the ABI. detail controls size: summary (default) omits logs and calldata, full adds raw event logs, raw adds the untouched RPC payloads. Wraps eth_getTransactionByHash and eth_getTransactionReceipt. Every response echoes chain_id and block_number (the chain head the answer was computed against — the basis for confirmations); addresses are EIP-55 checksummed. A pending transaction has status "pending" and null receipt fields. found false with an explanatory note means the node does not know the hash — a normal answer, not an error.',
+    'Everything about a transaction by hash: status (success|failed|pending), from, to (null for contract creation, with created_contract carrying the deployed address), transferred value in wei and ether, nonce, tx_type, gas_limit AND gas_used with gas_used_percent (out-of-gas shows near 100% on a failed tx), effective gas price in wei and gwei, the EIP-1559 fee caps, the total fee_paid precomputed in wei and ether, the block it was included in plus confirmations, and the number of logs it emitted. method decodes the calldata selector against a small bundled set of common ERC-20/721 functions (name null = outside the set, method null = plain value transfer). token_transfers decodes ERC-20/721 Transfer and Approval events from bundled ABIs — other events are skipped, not errors. A FAILED transaction additionally carries failure: {reason, revert_data, method, method_note} explaining why it reverted. READ method: it says how the reason was obtained and therefore how far it can be trusted. method "trace" is the revert frame from debug_traceTransaction — what actually happened, at the time it happened. method "replay" means the call was re-run against TOP-OF-BLOCK state rather than the state this transaction actually met, so the reason may differ from the real one: anything earlier transactions in the same block changed is missing from the replay. method "replay-not-reproduced" means the replay SUCCEEDED, so the failure was state- or order-dependent and no reason for it can be given at all. method "none" means neither was available, or the transaction is still pending. method_note is non-null whenever a better method was expected but unavailable at call time (e.g. the trace call failed for a reason unrelated to the method — retrying may reach it); standard Error(string) and Panic reasons are decoded, custom errors come back as raw selector + data, with revert_data_words splitting the arguments into 32-byte words read as uint256 (and as an address where the word is one) so amounts are legible without the ABI. detail controls size: summary (default) omits logs and calldata, full adds raw event logs, raw adds the untouched RPC payloads. Wraps eth_getTransactionByHash and eth_getTransactionReceipt. Every response echoes chain_id and block_number (the chain head the answer was computed against — the basis for confirmations); addresses are EIP-55 checksummed. A pending transaction has status "pending" and null receipt fields. found false with an explanatory note means the node does not know the hash — a normal answer, not an error.',
   input,
   output,
   idempotent: false,

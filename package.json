@@ -1,6 +1,6 @@
 {
   "name": "chainspeak-mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "MCP server that lets LLMs read Ethereum chain data — balances, blocks, transactions, tokens",
   "license": "MIT",
   "type": "module",

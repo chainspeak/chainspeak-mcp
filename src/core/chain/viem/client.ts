@@ -605,7 +605,7 @@ export function createViemReader(cfg: {
           : data !== null && data !== '0x'
             ? describeRevertData(data)
             : `failed with: ${frame.error}`
-      return { reason, revertData: data, method: 'trace', confidence: 'exact', note: null }
+      return { reason, revertData: data, method: 'trace', note: null }
     })
 
   /** Replay path: eth_call with the tx's fields against top-of-block state (block N-1). */
@@ -615,7 +615,6 @@ export function createViemReader(cfg: {
         reason: 'the transaction is still pending — nothing to analyze yet',
         revertData: null,
         method: 'none',
-        confidence: 'none',
         note: null,
       })
     }
@@ -638,8 +637,10 @@ export function createViemReader(cfg: {
           reason:
             'could not reproduce: the call succeeds against top-of-block state — the failure was state- or order-dependent (e.g. a balance or condition changed by an earlier transaction in the same block)',
           revertData: null,
-          method: 'replay',
-          confidence: 'none',
+          // The replay ran and did NOT fail, which is itself the finding: the
+          // reason cannot be recovered because it depended on state the block
+          // had already changed by the time this transaction ran.
+          method: 'replay-not-reproduced',
           note: null,
         }
       }
@@ -651,7 +652,6 @@ export function createViemReader(cfg: {
             : `reverted on replay without recoverable revert data (provider said: ${mapViemError(outcome.replayError).message})`,
         revertData: data,
         method: 'replay',
-        confidence: 'approximate',
         note: null,
       }
     })
@@ -678,7 +678,6 @@ export function createViemReader(cfg: {
         'failure analysis unavailable: the RPC endpoint answered neither a trace nor a replay',
       revertData: null,
       method: 'none',
-      confidence: 'none',
       note: null,
     }
     // No silent fallback: whenever replay stands in for trace, the note says why.
@@ -691,7 +690,7 @@ export function createViemReader(cfg: {
     // the probe, and unlike a cached guess it is about the transaction actually
     // being analyzed. A load-balanced endpoint answers from whichever node it
     // picks and not all of them carry debug_, so retrying once in-process keeps
-    // `confidence` stable across identical calls instead of flapping.
+    // `method` stable across identical calls instead of flapping.
     const traceOnce = (): ResultAsync<FailureAnalysis | null, ChainError> => traceFailure(tx)
     return traceOnce()
       .orElse((e) => (e.retryable ? traceOnce() : errAsync(e)))

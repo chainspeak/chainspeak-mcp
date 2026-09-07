@@ -99,7 +99,6 @@ describe('chainspeak_get_transaction', () => {
       revert_data: '0x08c379a0',
       revert_data_words: null,
       method: 'replay',
-      confidence: 'approximate',
       method_note: null,
     })
   })
@@ -112,7 +111,6 @@ describe('chainspeak_get_transaction', () => {
           reason: 'reverted with custom error 0x7040b58c',
           revertData: '0x7040b58c' as const,
           method: 'replay' as const,
-          confidence: 'approximate' as const,
           note: 'trace attempted but failed (UPSTREAM_TRANSIENT: rate limited) — replay used; retrying the tool call may reach the trace path',
         }),
     })
@@ -132,7 +130,6 @@ describe('chainspeak_get_transaction', () => {
           reason: null,
           revertData: null,
           method: 'none' as const,
-          confidence: 'none' as const,
           note: null,
         })
       },
