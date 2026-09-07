@@ -76,7 +76,8 @@ export interface ChainReader {
    * Why a FAILED transaction reverted. Ladder: debug_traceTransaction when the
    * endpoint has it (exact) → eth_call replay against top-of-block state
    * (approximate — order-dependent failures may not reproduce). Never errs:
-   * degradation is expressed in {method, confidence}.
+   * degradation is expressed in `method`, which is the mechanism and the
+   * caveat at once.
    */
   analyzeFailure(tx: TransactionData): ResultAsync<FailureAnalysis, ChainError>
   transactionRaw(

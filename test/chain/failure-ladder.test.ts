@@ -12,6 +12,8 @@ const NOPE_DATA = `0x08c379a0${'20'.padStart(64, '0')}${'4'.padStart(64, '0')}${
 interface Behavior {
   /** what the trace call answers. There is no probe any more — this IS the call. */
   realTrace: 'works' | 'fails' | 'method-not-found'
+  /** 'reverts' (default) or 'succeeds', which is the not-reproduced case */
+  replay?: 'reverts' | 'succeeds'
 }
 
 let server: Server | undefined
@@ -60,6 +62,9 @@ const serve = (behavior: Behavior): Promise<string> => {
           }
         }
         if (r.method === 'eth_call') {
+          if (behavior.replay === 'succeeds') {
+            return { jsonrpc: '2.0', id: r.id, result: '0x' }
+          }
           return {
             jsonrpc: '2.0',
             id: r.id,
@@ -121,7 +126,6 @@ describe('failure-analysis ladder (integration; trace is attempted, never probed
     const analysis = (await reader.analyzeFailure(failedTx))._unsafeUnwrap()
 
     expect(analysis.method).toBe('trace')
-    expect(analysis.confidence).toBe('exact')
     expect(analysis.reason).toBe('reverted with reason: "nope"')
     expect(analysis.note).toBeNull()
   })
@@ -134,8 +138,9 @@ describe('failure-analysis ladder (integration; trace is attempted, never probed
 
     const analysis = (await reader.analyzeFailure(failedTx))._unsafeUnwrap()
 
+    // `method` alone carries the caveat now — there is no confidence field to
+    // agree or disagree with it.
     expect(analysis.method).toBe('replay')
-    expect(analysis.confidence).toBe('approximate')
     expect(analysis.reason).toBe('reverted with reason: "nope"')
     // the field-test defect: this must never be a silent fallback
     expect(analysis.note).toContain('replay used')
@@ -159,5 +164,24 @@ describe('failure-analysis ladder (integration; trace is attempted, never probed
     expect(analysis.method).toBe('replay')
     // -32601 IS the node answering about the method, so this assertion is earned
     expect(analysis.note).toContain('does not offer debug_traceTransaction')
+  })
+
+  /**
+   * The distinction `confidence` used to carry and `method` now does. A replay
+   * that SUCCEEDS is not a weaker reason — it is no reason at all, and reading
+   * it as "reverted, approximately" would be worse than reading nothing.
+   */
+  it('says replay-not-reproduced when the replay succeeds, rather than inventing a reason', {
+    timeout: 15000,
+  }, async () => {
+    const url = await serve({ realTrace: 'fails', replay: 'succeeds' })
+    const reader = createViemReader({ url, timeoutMs: 3000 })
+
+    const analysis = (await reader.analyzeFailure(failedTx))._unsafeUnwrap()
+
+    expect(analysis.method).toBe('replay-not-reproduced')
+    expect(analysis.revertData).toBeNull()
+    expect(analysis.reason).toContain('could not reproduce')
+    expect(analysis.reason).toContain('order-dependent')
   })
 })

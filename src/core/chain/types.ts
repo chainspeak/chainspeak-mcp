@@ -166,8 +166,23 @@ export interface LogScan {
 export interface FailureAnalysis {
   reason: string | null
   revertData: `0x${string}` | null
-  method: 'trace' | 'replay' | 'none'
-  confidence: 'exact' | 'approximate' | 'none'
+  /**
+   * How the reason was obtained, and therefore how far it can be trusted. The
+   * method IS the caveat — there is no separate confidence field, because a
+   * second word that can only ever restate this one is a label, not information.
+   *
+   * - `trace`: the revert frame from `debug_traceTransaction`. What actually
+   *   happened, at the time it happened.
+   * - `replay`: the call was re-run with `eth_call` against TOP-OF-BLOCK state,
+   *   not the state this transaction actually met. It reverted again and this
+   *   is that revert — which may not be the same one, because anything the
+   *   earlier transactions in the block changed is missing from the replay.
+   * - `replay-not-reproduced`: the replay SUCCEEDED. The failure was state- or
+   *   order-dependent, so no reason can be given for it at all.
+   * - `none`: neither method produced anything — the transaction is still
+   *   pending, or the endpoint served neither call.
+   */
+  method: 'trace' | 'replay' | 'replay-not-reproduced' | 'none'
   /** Silent fallback is a bug; this field is the receipt for a degraded path. */
   note: string | null
 }

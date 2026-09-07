@@ -81,7 +81,6 @@ const defaults = (): Omit<ChainReader, 'scanLogs'> => ({
       reason: 'reverted with reason: "ERC20: transfer amount exceeds balance"',
       revertData: '0x08c379a0' as const,
       method: 'replay' as const,
-      confidence: 'approximate' as const,
       note: null,
     }),
 })
